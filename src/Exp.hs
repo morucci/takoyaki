@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE RankNTypes #-}
 
 -- |
 -- Module      : Exp
@@ -14,9 +15,11 @@ import Control.Concurrent.STM
 import Control.Monad.IO.Class (liftIO)
 import Data.String.Interpolate (i, iii)
 import Engine
-  ( Registry,
+  ( IsWEvent,
+    Registry,
     Widget (..),
     addWidget,
+    getWidgetsEvents,
     initWStore,
     processEventWidgets,
     renderWidget,
@@ -64,7 +67,7 @@ runServer = Warp.run 8091 $ expApp
 
 data CounterEvent = IncCounter | DecrCounter
 
-data WidgetEvent = CounterEvent
+instance IsWEvent CounterEvent
 
 w1 :: Widget Int CounterEvent
 w1 =
@@ -96,12 +99,9 @@ w1 =
       DecrCounter -> s - 1
     wTrigger = Nothing
 
-initQueue :: STM (TBQueue WidgetEvent)
-initQueue = newTBQueue 10
-
-expWSHandler :: [Widget s e] -> WS.Connection -> Handler ()
+expWSHandler :: IsWEvent e => [Widget s e] -> WS.Connection -> Handler ()
 expWSHandler widgets conn = do
-  -- queue <- liftIO $ atomically initQueue
+  queue <- liftIO . atomically $ newTBQueue 10
   liftIO $ WS.withPingThread conn 5 (pure ()) $ do
     registry <- atomically $ do
       reg <- initWStore
@@ -110,24 +110,27 @@ expWSHandler widgets conn = do
     putStrLn [i|New connection ...|]
     dom <- atomically $ getDom registry
     WS.sendTextData conn $ renderBS $ div_ [id_ "init"] dom
-    handleClient registry
+    handleClient registry queue
   where
-    handleClient registry = do
+    handleClient registry queue = do
       msg <- WS.receiveDataMessage conn
-      handleDataMessage registry msg
-      handleClient registry
-    getDom :: Registry s e -> STM (Html ())
+      handleDataMessage registry queue msg
+      handleClient registry queue
+    getDom :: IsWEvent e => Registry s e -> STM (Html ())
     getDom registry = do
       counterW <- renderWidget registry "Counter"
       pure $ div_ [id_ "my-dom"] $ do
         counterW
-    handleDataMessage :: Registry s e -> WS.DataMessage -> IO ()
-    handleDataMessage registry msg = do
+    -- handleDataMessage :: IsWEvent e => Registry s e -> WS.DataMessage -> IO ()
+    handleDataMessage registry queue msg = do
       let eventM = decodeEvent msg
       putStrLn $ "payload received: " <> show eventM
       case eventM of
         Nothing -> pure ()
         Just event -> do
+          atomically $ do
+            widgetEvents <- getWidgetsEvents registry event
+            mapM_ (writeTBQueue queue) widgetEvents
           bss <- atomically $ processEventWidgets registry event
           mapM_ (WS.sendTextData conn . renderBS) bss
 
