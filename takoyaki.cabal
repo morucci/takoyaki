@@ -33,6 +33,8 @@ common common-options
 library
     import:           common-options
     exposed-modules:  Exp
+                    , Htmx
+                    , Engine
     build-depends:    servant
                     , servant-lucid
                     , servant-server
