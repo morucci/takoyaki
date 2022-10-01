@@ -29,6 +29,11 @@ hxExtWS = makeAttribute "hx-ext" "ws"
 
 data WSwapStrategy = InnerHTML | BeforeBegin
 
+swapToText :: WSwapStrategy -> Text
+swapToText sw = case sw of
+  InnerHTML -> "innerHTML"
+  BeforeBegin -> "beforebegin"
+
 type Id = Text
 
 type Trigger = Text

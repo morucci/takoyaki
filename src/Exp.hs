@@ -64,6 +64,8 @@ runServer = Warp.run 8091 $ expApp
 
 data CounterEvent = IncCounter | DecrCounter
 
+data WidgetEvent = CounterEvent
+
 w1 :: Widget Int CounterEvent
 w1 =
   Widget
@@ -94,8 +96,12 @@ w1 =
       DecrCounter -> s - 1
     wTrigger = Nothing
 
+initQueue :: STM (TBQueue WidgetEvent)
+initQueue = newTBQueue 10
+
 expWSHandler :: [Widget s e] -> WS.Connection -> Handler ()
 expWSHandler widgets conn = do
+  -- queue <- liftIO $ atomically initQueue
   liftIO $ WS.withPingThread conn 5 (pure ()) $ do
     registry <- atomically $ do
       reg <- initWStore

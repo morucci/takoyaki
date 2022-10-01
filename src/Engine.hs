@@ -6,7 +6,7 @@ import qualified Data.Aeson.Text as Aeson
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 import Data.Text.Lazy (toStrict)
-import Htmx (Id, Trigger, WSEvent, WSwapStrategy, hxTrigger, hxVals, wsSend)
+import Htmx (Id, Trigger, WSEvent, WSwapStrategy, hxSwapOOB, hxTrigger, hxVals, swapToText, wsSend)
 import Lucid (Html, with)
 import Lucid.Html5
 import Prelude
@@ -58,8 +58,17 @@ processEventWidgets reg event = do
   ids <- getWidgetIds reg
   catMaybes <$> (mapM (processEventWidget reg event) ids)
 
+widgetHandleEvent :: WSEvent -> Widget s e -> Maybe (Widget s e)
+widgetHandleEvent wsevent widget = do
+  case (wsEvent widget wsevent) of
+    Just wEvent -> do
+      let newState = wStateUpdate widget (wState widget) wEvent
+          newWidget = widget {wState = newState}
+      pure newWidget
+    Nothing -> Nothing
+
 widgetRender :: Widget s e -> Html ()
-widgetRender w = with elm [wIdVal]
+widgetRender w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
   where
     elm = case wTrigger w of
       Nothing -> with baseElm [id_ (wId w)]
@@ -78,12 +87,3 @@ withEvent eid triggerM elm =
    in case triggerM of
         Just trigger -> with elm' [hxTrigger trigger]
         Nothing -> elm'
-
-widgetHandleEvent :: WSEvent -> Widget s e -> Maybe (Widget s e)
-widgetHandleEvent wsevent widget = do
-  case (wsEvent widget wsevent) of
-    Just wEvent -> do
-      let newState = wStateUpdate widget (wState widget) wEvent
-          newWidget = widget {wState = newState}
-      pure newWidget
-    Nothing -> Nothing
