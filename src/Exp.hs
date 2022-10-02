@@ -13,12 +13,12 @@ module Exp where
 
 import Control.Concurrent.STM
 import Control.Monad.IO.Class (liftIO)
+import qualified Data.Aeson as Aeson
 import Data.String.Interpolate (i, iii)
-import Data.Text (Text)
 import Engine
   ( Registry,
     WEvent (WEvent),
-    WState (..),
+    WState,
     Widget (..),
     addWidget,
     getWidgetsEvents,
@@ -74,7 +74,7 @@ w1 =
       wSwap = InnerHTML,
       wsEvent,
       wRender,
-      wState = WSInt 0,
+      wState = Aeson.Number 0,
       wStateUpdate,
       wTrigger
     }
@@ -85,19 +85,19 @@ w1 =
       | (wseTriggerId e) == "DecrButton" = Just $ WEvent "DecrCounter"
       | otherwise = Nothing
     wRender :: WState -> Html ()
-    wRender (WSInt i) = do
+    wRender (Aeson.Number i') = do
       div_ $ do
         span_ $ do
           withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
           withEvent "DecrButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
-          span_ [class_ "mx-2"] $ toHtml $ show i
-    wRender _ = pure ()
+          span_ [class_ "mx-2"] $ toHtml $ show i'
+    wRender _ = error "Unexpected state type"
     wStateUpdate :: WState -> WEvent -> WState
-    wStateUpdate s@(WSInt i') e = case e of
-      WEvent "IncCounter" -> WSInt (i' + 1)
-      WEvent "DecrCounter" -> WSInt (i' - 1)
+    wStateUpdate s@(Aeson.Number i') e = case e of
+      WEvent "IncCounter" -> Aeson.Number (i' + 1)
+      WEvent "DecrCounter" -> Aeson.Number (i' - 1)
       _otherwise -> s
-    wStateUpdate _ _ = error ""
+    wStateUpdate _ _ = error "Unexpected state type"
     wTrigger = Nothing
 
 -- w1' :: Widget Int Counter2Event

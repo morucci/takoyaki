@@ -1,6 +1,7 @@
 module Engine where
 
 import Control.Concurrent.STM (STM, TVar, modifyTVar, newTVar, readTVar)
+import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.KeyMap as Aeson
 import qualified Data.Aeson.Text as Aeson
 import qualified Data.Map as Map
@@ -14,7 +15,7 @@ import Prelude
 
 data WEvent = WEvent Text
 
-data WState = WSInt Int | WSBool Bool
+type WState = Aeson.Value
 
 type WStore = Map.Map Id Widget
 
