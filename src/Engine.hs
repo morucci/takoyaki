@@ -8,12 +8,12 @@ import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import Data.Text.Lazy (toStrict)
-import Htmx (Trigger, WSEvent, WSwapStrategy, WidgetId, hxSwapOOB, hxTrigger, hxVals, swapToText, wsSend)
+import Htmx (Trigger, WSEvent (..), WSwapStrategy, WidgetId, hxSwapOOB, hxTrigger, hxVals, swapToText, wsSend)
 import Lucid (Html, with)
 import Lucid.Html5
 import Prelude
 
-data WEvent = WEvent Text
+data WEvent = WEvent Text deriving (Show)
 
 type WState = Aeson.Value
 
@@ -24,7 +24,7 @@ type Registry = TVar WStore
 data Widget = Widget
   { wId :: WidgetId,
     wSwap :: WSwapStrategy,
-    wsEvent :: WidgetId -> WSEvent -> Maybe WEvent,
+    wsEvent :: WSEvent -> Maybe WEvent,
     wRender :: WState -> Html (),
     wState :: WState,
     wStateUpdate :: WState -> WEvent -> WState,
@@ -43,12 +43,17 @@ getWidgetIds reg = Map.keys <$> readTVar reg
 getWidgets :: Registry -> STM [Widget]
 getWidgets reg = Map.elems <$> readTVar reg
 
-getWidgetsEvents :: Registry -> WSEvent -> STM [WEvent]
-getWidgetsEvents reg event = do
-  widgets <- getWidgets reg
-  catMaybes <$> mapM go widgets
-  where
-    go w = pure $ wsEvent w w.wId event
+getWidget :: Registry -> WidgetId -> STM (Maybe Widget)
+getWidget reg wid = do
+  st <- readTVar reg
+  pure $ Map.lookup wid st
+
+-- getWidgetsEvents :: Registry -> WSEvent -> STM WEvent
+-- getWidgetsEvents reg event = do
+--   widgets <- getWidgets reg
+--   catMaybes <$> mapM go widgets
+--   where
+--     go w = pure $ wsEvent w w.wId event
 
 renderWidget :: Registry -> WidgetId -> STM (Html ())
 renderWidget reg wid = do
@@ -69,6 +74,18 @@ processEventWidget reg event wid = do
       pure $ Just $ widgetRender new
     Nothing -> pure Nothing
 
+-- processEventWidget' :: Registry -> WEvent -> STM (Maybe (Html ()))
+-- processEventWidget' reg event = do
+--   st <- readTVar reg
+--   let newWidgetM = case Map.lookup wid st of
+--         Just w -> widgetHandleEvent event w
+--         Nothing -> Nothing
+--   case newWidgetM of
+--     Just new -> do
+--       addWidget reg new
+--       pure $ Just $ widgetRender new
+--     Nothing -> pure Nothing
+
 processEventWidgets :: Registry -> WSEvent -> STM [Html ()]
 processEventWidgets reg event = do
   ids <- getWidgetIds reg
@@ -76,7 +93,7 @@ processEventWidgets reg event = do
 
 widgetHandleEvent :: WSEvent -> Widget -> Maybe Widget
 widgetHandleEvent wsevent widget = do
-  case (wsEvent widget widget.wId wsevent) of
+  case (wsEvent widget wsevent) of
     Just wEvent -> do
       let newState = wStateUpdate widget widget.wState wEvent
           newWidget = widget {wState = newState}

@@ -62,6 +62,6 @@ instance FromJSON WSEvent where
       Just event -> pure event
       Nothing -> fail "String"
 
-decodeEvent :: WS.DataMessage -> Maybe WSEvent
-decodeEvent (WS.Text dm _) = decode dm
-decodeEvent _ = Nothing
+decodeWSEvent :: WS.DataMessage -> Maybe WSEvent
+decodeWSEvent (WS.Text dm _) = decode dm
+decodeWSEvent _ = Nothing

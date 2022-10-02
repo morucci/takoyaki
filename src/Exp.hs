@@ -11,17 +11,17 @@
 -- Add desc
 module Exp where
 
+import Control.Concurrent.Async (concurrently_)
 import Control.Concurrent.STM
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.Aeson as Aeson
 import Data.String.Interpolate (i, iii)
 import Engine
-  ( Registry,
-    WEvent (WEvent),
+  ( WEvent (WEvent),
     WState,
     Widget (..),
     addWidget,
-    getWidgetsEvents,
+    getWidget,
     initWStore,
     processEventWidgets,
     renderWidget,
@@ -30,8 +30,7 @@ import Engine
 import Htmx
   ( WSEvent (..),
     WSwapStrategy (InnerHTML),
-    WidgetId,
-    decodeEvent,
+    decodeWSEvent,
     hxExtWS,
     wsConnect,
     xStaticFiles,
@@ -80,10 +79,10 @@ w1 =
       wTrigger
     }
   where
-    wsEvent :: WidgetId -> WSEvent -> Maybe WEvent
-    wsEvent wId e
-      | e.wseWidgetId == wId && e.wseTriggerId == "IncButton" = Just $ WEvent "IncCounter"
-      | e.wseWidgetId == wId && e.wseTriggerId == "DecrButton" = Just $ WEvent "DecrCounter"
+    wsEvent :: WSEvent -> Maybe WEvent
+    wsEvent e
+      | e.wseTriggerId == "IncButton" = Just $ WEvent "IncCounter"
+      | e.wseTriggerId == "DecrButton" = Just $ WEvent "DecrCounter"
       | otherwise = Nothing
     wRender :: WState -> Html ()
     wRender (Aeson.Number i') = do
@@ -162,35 +161,42 @@ w1 =
 expWSHandler :: [Widget] -> WS.Connection -> Handler ()
 expWSHandler widgets conn = do
   queue <- liftIO . atomically $ newTBQueue 10
-  liftIO $ WS.withPingThread conn 5 (pure ()) $ do
-    registry <- atomically $ do
-      reg <- initWStore
-      mapM_ (addWidget reg) widgets
-      pure reg
-    putStrLn [i|New connection ...|]
-    dom <- atomically $ getDom registry
-    WS.sendTextData conn $ renderBS $ div_ [id_ "init"] dom
-    handleClient registry queue
+  liftIO $ concurrently_ (handleR queue) (handleS queue)
   where
+    handleS queue = do
+      event <- atomically $ readTBQueue queue
+      putStrLn $ "Consuming event: " <> show event
+      handleS queue
+    handleR queue = do
+      liftIO $ WS.withPingThread conn 5 (pure ()) $ do
+        registry <- atomically $ do
+          reg <- initWStore
+          mapM_ (addWidget reg) widgets
+          pure reg
+        putStrLn [i|New connection ...|]
+        dom <- atomically $ getDom registry
+        WS.sendTextData conn $ renderBS $ div_ [id_ "init"] dom
+        handleClient registry queue
     handleClient registry queue = do
       msg <- WS.receiveDataMessage conn
       handleDataMessage registry queue msg
       handleClient registry queue
-    getDom :: Registry -> STM (Html ())
     getDom registry = do
       counterW <- renderWidget registry "Counter"
       pure $ div_ [id_ "my-dom"] $ do
         counterW
     handleDataMessage registry queue msg = do
-      let eventM = decodeEvent msg
-      putStrLn $ "payload received: " <> show eventM
-      case eventM of
+      let wsEventM = decodeWSEvent msg
+      putStrLn $ "payload received: " <> show wsEventM
+      case wsEventM of
         Nothing -> pure ()
-        Just event -> do
+        Just wsEvent -> do
           atomically $ do
-            widgetEvents <- getWidgetsEvents registry event
-            mapM_ (writeTBQueue queue) widgetEvents
-          bss <- atomically $ processEventWidgets registry event
+            targetedWidgetM <- getWidget registry wsEvent.wseWidgetId
+            mapM_ (writeTBQueue queue) $ case targetedWidgetM of
+              Just targetedWidget -> targetedWidget.wsEvent wsEvent
+              Nothing -> Nothing
+          bss <- atomically $ processEventWidgets registry wsEvent
           mapM_ (WS.sendTextData conn . renderBS) bss
 
 expHTMLHandler :: Html ()
