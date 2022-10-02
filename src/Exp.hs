@@ -14,9 +14,11 @@ module Exp where
 import Control.Concurrent.STM
 import Control.Monad.IO.Class (liftIO)
 import Data.String.Interpolate (i, iii)
+import Data.Text (Text)
 import Engine
-  ( IsWEvent,
-    Registry,
+  ( Registry,
+    WEvent (WEvent),
+    WState (..),
     Widget (..),
     addWidget,
     getWidgetsEvents,
@@ -55,7 +57,7 @@ expServer :: Server ExpAPI
 expServer =
   xstaticServant (xStaticFiles <> [XStatic.tailwind])
     :<|> pure expHTMLHandler
-    :<|> expWSHandler [w1, w1']
+    :<|> expWSHandler [w1]
 
 -- | Create the web application
 expApp :: Wai.Application
@@ -65,75 +67,68 @@ expApp = serve (Proxy @ExpAPI) $ expServer
 runServer :: IO ()
 runServer = Warp.run 8092 $ expApp
 
-data CounterEvent = IncCounter | DecrCounter
-
-data Counter2Event = Inc2Counter | Decr2Counter
-
--- data SwitchEvent = Switch
-
-instance IsWEvent CounterEvent
-
--- instance IsWEvent SwitchEvent
-
-w1 :: Widget Int CounterEvent
+w1 :: Widget
 w1 =
   Widget
     { wId = "Counter",
       wSwap = InnerHTML,
       wsEvent,
       wRender,
-      wState = 0 :: Int,
+      wState = WSInt 0,
       wStateUpdate,
       wTrigger
     }
   where
-    wsEvent :: WSEvent -> Maybe CounterEvent
+    wsEvent :: WSEvent -> Maybe WEvent
     wsEvent e
-      | (wseTriggerId e) == "IncButton" = Just IncCounter
-      | (wseTriggerId e) == "DecrButton" = Just DecrCounter
+      | (wseTriggerId e) == "IncButton" = Just $ WEvent "IncCounter"
+      | (wseTriggerId e) == "DecrButton" = Just $ WEvent "DecrCounter"
       | otherwise = Nothing
-    wRender :: Int -> Html ()
-    wRender s = do
+    wRender :: WState -> Html ()
+    wRender (WSInt i) = do
       div_ $ do
         span_ $ do
           withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
           withEvent "DecrButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
-          span_ [class_ "mx-2"] $ toHtml $ show s
-    wStateUpdate :: Int -> CounterEvent -> Int
-    wStateUpdate s e = case e of
-      IncCounter -> s + 1
-      DecrCounter -> s - 1
+          span_ [class_ "mx-2"] $ toHtml $ show i
+    wRender _ = pure ()
+    wStateUpdate :: WState -> WEvent -> WState
+    wStateUpdate s@(WSInt i') e = case e of
+      WEvent "IncCounter" -> WSInt (i' + 1)
+      WEvent "DecrCounter" -> WSInt (i' - 1)
+      _otherwise -> s
+    wStateUpdate _ _ = error ""
     wTrigger = Nothing
 
-w1' :: Widget Int Counter2Event
-w1' =
-  Widget
-    { wId = "Counter2",
-      wSwap = InnerHTML,
-      wsEvent,
-      wRender,
-      wState = 0 :: Int,
-      wStateUpdate,
-      wTrigger
-    }
-  where
-    wsEvent :: WSEvent -> Maybe Counter2Event
-    wsEvent e
-      | (wseTriggerId e) == "IncButton" = Just Inc2Counter
-      | (wseTriggerId e) == "DecrButton" = Just Decr2Counter
-      | otherwise = Nothing
-    wRender :: Int -> Html ()
-    wRender s = do
-      div_ $ do
-        span_ $ do
-          withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
-          withEvent "DecrButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
-          span_ [class_ "mx-2"] $ toHtml $ show s
-    wStateUpdate :: Int -> Counter2Event -> Int
-    wStateUpdate s e = case e of
-      Inc2Counter -> s + 1
-      Decr2Counter -> s - 1
-    wTrigger = Nothing
+-- w1' :: Widget Int Counter2Event
+-- w1' =
+--   Widget
+--     { wId = "Counter2",
+--       wSwap = InnerHTML,
+--       wsEvent,
+--       wRender,
+--       wState = 0 :: Int,
+--       wStateUpdate,
+--       wTrigger
+--     }
+--   where
+--     wsEvent :: WSEvent -> Maybe Counter2Event
+--     wsEvent e
+--       | (wseTriggerId e) == "IncButton" = Just Inc2Counter
+--       | (wseTriggerId e) == "DecrButton" = Just Decr2Counter
+--       | otherwise = Nothing
+--     wRender :: Int -> Html ()
+--     wRender s = do
+--       div_ $ do
+--         span_ $ do
+--           withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
+--           withEvent "DecrButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
+--           span_ [class_ "mx-2"] $ toHtml $ show s
+--     wStateUpdate :: Int -> Counter2Event -> Int
+--     wStateUpdate s e = case e of
+--       Inc2Counter -> s + 1
+--       Decr2Counter -> s - 1
+--     wTrigger = Nothing
 
 -- w2 :: Widget Bool SwitchEvent
 -- w2 =
@@ -163,7 +158,7 @@ w1' =
 --       Switch -> not s
 --     wTrigger = Nothing
 
-expWSHandler :: IsWEvent e => [Widget s e] -> WS.Connection -> Handler ()
+expWSHandler :: [Widget] -> WS.Connection -> Handler ()
 expWSHandler widgets conn = do
   queue <- liftIO . atomically $ newTBQueue 10
   liftIO $ WS.withPingThread conn 5 (pure ()) $ do
@@ -180,7 +175,7 @@ expWSHandler widgets conn = do
       msg <- WS.receiveDataMessage conn
       handleDataMessage registry queue msg
       handleClient registry queue
-    getDom :: IsWEvent e => Registry s e -> STM (Html ())
+    getDom :: Registry -> STM (Html ())
     getDom registry = do
       counterW <- renderWidget registry "Counter"
       pure $ div_ [id_ "my-dom"] $ do

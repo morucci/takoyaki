@@ -5,55 +5,58 @@ import qualified Data.Aeson.KeyMap as Aeson
 import qualified Data.Aeson.Text as Aeson
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
+import Data.Text (Text)
 import Data.Text.Lazy (toStrict)
 import Htmx (Id, Trigger, WSEvent, WSwapStrategy, hxSwapOOB, hxTrigger, hxVals, swapToText, wsSend)
 import Lucid (Html, with)
 import Lucid.Html5
 import Prelude
 
-type WStore s e = Map.Map Id (Widget s e)
+data WEvent = WEvent Text
 
-type Registry s e = TVar (WStore s e)
+data WState = WSInt Int | WSBool Bool
 
-class IsWEvent e
+type WStore = Map.Map Id Widget
 
-data Widget s e = Widget
+type Registry = TVar WStore
+
+data Widget = Widget
   { wId :: Id,
     wSwap :: WSwapStrategy,
-    wsEvent :: WSEvent -> Maybe e,
-    wRender :: s -> Html (),
-    wState :: s,
-    wStateUpdate :: s -> e -> s,
+    wsEvent :: WSEvent -> Maybe WEvent,
+    wRender :: WState -> Html (),
+    wState :: WState,
+    wStateUpdate :: WState -> WEvent -> WState,
     wTrigger :: Maybe (Maybe Trigger)
   }
 
-initWStore :: STM (Registry s e)
+initWStore :: STM Registry
 initWStore = newTVar Map.empty
 
-addWidget :: IsWEvent e => Registry s e -> Widget s e -> STM ()
+addWidget :: Registry -> Widget -> STM ()
 addWidget st w = modifyTVar st $ Map.insert (wId w) w
 
-getWidgetIds :: Registry s e -> STM [Id]
+getWidgetIds :: Registry -> STM [Id]
 getWidgetIds reg = Map.keys <$> readTVar reg
 
-getWidgets :: Registry s e -> STM [Widget s e]
+getWidgets :: Registry -> STM [Widget]
 getWidgets reg = Map.elems <$> readTVar reg
 
-getWidgetsEvents :: IsWEvent e => Registry s e -> WSEvent -> STM [e]
+getWidgetsEvents :: Registry -> WSEvent -> STM [WEvent]
 getWidgetsEvents reg event = do
   widgets <- getWidgets reg
   catMaybes <$> mapM go widgets
   where
     go w = pure $ wsEvent w event
 
-renderWidget :: IsWEvent e => Registry s e -> Id -> STM (Html ())
+renderWidget :: Registry -> Id -> STM (Html ())
 renderWidget reg wid = do
   st <- readTVar reg
   case Map.lookup wid st of
     Just w -> pure $ widgetRender w
     Nothing -> pure mempty
 
-processEventWidget :: IsWEvent e => Registry s e -> WSEvent -> Id -> STM (Maybe (Html ()))
+processEventWidget :: Registry -> WSEvent -> Id -> STM (Maybe (Html ()))
 processEventWidget reg event wid = do
   st <- readTVar reg
   let newWidgetM = case Map.lookup wid st of
@@ -65,12 +68,12 @@ processEventWidget reg event wid = do
       pure $ Just $ widgetRender new
     Nothing -> pure Nothing
 
-processEventWidgets :: IsWEvent e => Registry s e -> WSEvent -> STM [Html ()]
+processEventWidgets :: Registry -> WSEvent -> STM [Html ()]
 processEventWidgets reg event = do
   ids <- getWidgetIds reg
   catMaybes <$> (mapM (processEventWidget reg event) ids)
 
-widgetHandleEvent :: IsWEvent e => WSEvent -> Widget s e -> Maybe (Widget s e)
+widgetHandleEvent :: WSEvent -> Widget -> Maybe Widget
 widgetHandleEvent wsevent widget = do
   case (wsEvent widget wsevent) of
     Just wEvent -> do
@@ -79,7 +82,7 @@ widgetHandleEvent wsevent widget = do
       pure newWidget
     Nothing -> Nothing
 
-widgetRender :: IsWEvent e => Widget s e -> Html ()
+widgetRender :: Widget -> Html ()
 widgetRender w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
   where
     elm = case wTrigger w of
