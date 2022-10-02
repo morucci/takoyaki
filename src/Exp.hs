@@ -17,13 +17,13 @@ import Control.Monad.IO.Class (liftIO)
 import qualified Data.Aeson as Aeson
 import Data.String.Interpolate (i, iii)
 import Engine
-  ( WEvent (WEvent),
+  ( WEvent (WEvent, eTarget),
     WState,
     Widget (..),
     addWidget,
     getWidget,
     initWStore,
-    processEventWidgets,
+    processEventWidget,
     renderWidget,
     withEvent,
   )
@@ -81,8 +81,8 @@ w1 =
   where
     wsEvent :: WSEvent -> Maybe WEvent
     wsEvent e
-      | e.wseTriggerId == "IncButton" = Just $ WEvent "IncCounter"
-      | e.wseTriggerId == "DecrButton" = Just $ WEvent "DecrCounter"
+      | e.wseTriggerId == "IncButton" = Just $ WEvent "Counter" "IncCounter"
+      | e.wseTriggerId == "DecrButton" = Just $ WEvent "Counter" "DecrCounter"
       | otherwise = Nothing
     wRender :: WState -> Html ()
     wRender (Aeson.Number i') = do
@@ -94,8 +94,8 @@ w1 =
     wRender _ = error "Unexpected state type"
     wStateUpdate :: WState -> WEvent -> WState
     wStateUpdate s@(Aeson.Number i') e = case e of
-      WEvent "IncCounter" -> Aeson.Number (i' + 1)
-      WEvent "DecrCounter" -> Aeson.Number (i' - 1)
+      WEvent _ "IncCounter" -> Aeson.Number (i' + 1)
+      WEvent _ "DecrCounter" -> Aeson.Number (i' - 1)
       _otherwise -> s
     wStateUpdate _ _ = error "Unexpected state type"
     wTrigger = Nothing
@@ -161,18 +161,23 @@ w1 =
 expWSHandler :: [Widget] -> WS.Connection -> Handler ()
 expWSHandler widgets conn = do
   queue <- liftIO . atomically $ newTBQueue 10
-  liftIO $ concurrently_ (handleR queue) (handleS queue)
+  registry <- liftIO $ atomically $ do
+    reg <- initWStore
+    mapM_ (addWidget reg) widgets
+    pure reg
+  liftIO $ concurrently_ (handleR queue registry) (handleS queue registry)
   where
-    handleS queue = do
-      event <- atomically $ readTBQueue queue
-      putStrLn $ "Consuming event: " <> show event
-      handleS queue
-    handleR queue = do
+    handleS queue registry = do
+      toRender <- atomically $ do
+        event <- readTBQueue queue
+        widgetM <- getWidget registry event.eTarget
+        case widgetM of
+          Just widget -> processEventWidget registry event widget
+          Nothing -> pure mempty
+      WS.sendTextData conn $ renderBS toRender
+      handleS queue registry
+    handleR queue registry = do
       liftIO $ WS.withPingThread conn 5 (pure ()) $ do
-        registry <- atomically $ do
-          reg <- initWStore
-          mapM_ (addWidget reg) widgets
-          pure reg
         putStrLn [i|New connection ...|]
         dom <- atomically $ getDom registry
         WS.sendTextData conn $ renderBS $ div_ [id_ "init"] dom
@@ -196,8 +201,9 @@ expWSHandler widgets conn = do
             mapM_ (writeTBQueue queue) $ case targetedWidgetM of
               Just targetedWidget -> targetedWidget.wsEvent wsEvent
               Nothing -> Nothing
-          bss <- atomically $ processEventWidgets registry wsEvent
-          mapM_ (WS.sendTextData conn . renderBS) bss
+
+-- bss <- atomically $ processEventWidgets registry wsEvent
+-- mapM_ (WS.sendTextData conn . renderBS) bss
 
 expHTMLHandler :: Html ()
 expHTMLHandler = do
