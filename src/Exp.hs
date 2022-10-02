@@ -25,6 +25,7 @@ import Engine
     initWStore,
     processEventWidget,
     renderWidget,
+    widgetRender,
     withEvent,
   )
 import Htmx
@@ -168,42 +169,45 @@ expWSHandler widgets conn = do
   liftIO $ concurrently_ (handleR queue registry) (handleS queue registry)
   where
     handleS queue registry = do
-      toRender <- atomically $ do
+      widgetToRenderM <- atomically $ do
         event <- readTBQueue queue
         widgetM <- getWidget registry event.eTarget
-        case widgetM of
-          Just widget -> processEventWidget registry event widget
-          Nothing -> pure mempty
-      WS.sendTextData conn $ renderBS toRender
+        mapM (processEventWidget registry event) widgetM
+      case widgetToRenderM of
+        Just widgetToRender -> do
+          putStrLn $
+            "Rendering widget: "
+              <> show widgetToRender.wId
+              <> " State: "
+              <> show widgetToRender.wState
+          WS.sendTextData conn $ renderBS $ widgetRender widgetToRender
+        Nothing -> pure ()
       handleS queue registry
     handleR queue registry = do
       liftIO $ WS.withPingThread conn 5 (pure ()) $ do
         putStrLn [i|New connection ...|]
-        dom <- atomically $ getDom registry
+        dom <- atomically getDom
         WS.sendTextData conn $ renderBS $ div_ [id_ "init"] dom
-        handleClient registry queue
-    handleClient registry queue = do
-      msg <- WS.receiveDataMessage conn
-      handleDataMessage registry queue msg
-      handleClient registry queue
-    getDom registry = do
-      counterW <- renderWidget registry "Counter"
-      pure $ div_ [id_ "my-dom"] $ do
-        counterW
-    handleDataMessage registry queue msg = do
-      let wsEventM = decodeWSEvent msg
-      putStrLn $ "payload received: " <> show wsEventM
-      case wsEventM of
-        Nothing -> pure ()
-        Just wsEvent -> do
-          atomically $ do
-            targetedWidgetM <- getWidget registry wsEvent.wseWidgetId
-            mapM_ (writeTBQueue queue) $ case targetedWidgetM of
-              Just targetedWidget -> targetedWidget.wsEvent wsEvent
-              Nothing -> Nothing
-
--- bss <- atomically $ processEventWidgets registry wsEvent
--- mapM_ (WS.sendTextData conn . renderBS) bss
+        handleClient
+      where
+        handleClient = do
+          msg <- WS.receiveDataMessage conn
+          handleDataMessage msg
+          handleClient
+        getDom = do
+          counterW <- renderWidget registry "Counter"
+          pure $ div_ [id_ "my-dom"] $ do
+            counterW
+        handleDataMessage msg = do
+          case decodeWSEvent msg of
+            Nothing -> pure ()
+            Just wsEvent -> do
+              putStrLn $ "Received WS event: " <> show wsEvent
+              atomically $ do
+                targetedWidgetM <- getWidget registry wsEvent.wseWidgetId
+                mapM_ (writeTBQueue queue) $ case targetedWidgetM of
+                  Just targetedWidget -> targetedWidget.wsEvent wsEvent
+                  Nothing -> Nothing
 
 expHTMLHandler :: Html ()
 expHTMLHandler = do

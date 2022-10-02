@@ -52,12 +52,12 @@ renderWidget reg wid = do
     Just w -> pure $ widgetRender w
     Nothing -> pure mempty
 
-processEventWidget :: Registry -> WEvent -> Widget -> STM (Html ())
+processEventWidget :: Registry -> WEvent -> Widget -> STM Widget
 processEventWidget reg event widget = do
   let newState = wStateUpdate widget widget.wState event
       newWidget = widget {wState = newState}
   addWidget reg newWidget
-  pure $ widgetRender newWidget
+  pure newWidget
 
 widgetRender :: Widget -> Html ()
 widgetRender w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
