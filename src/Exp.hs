@@ -28,8 +28,9 @@ import Engine
     withEvent,
   )
 import Htmx
-  ( WSEvent (wseTriggerId),
+  ( WSEvent (..),
     WSwapStrategy (InnerHTML),
+    WidgetId,
     decodeEvent,
     hxExtWS,
     wsConnect,
@@ -79,10 +80,10 @@ w1 =
       wTrigger
     }
   where
-    wsEvent :: WSEvent -> Maybe WEvent
-    wsEvent e
-      | (wseTriggerId e) == "IncButton" = Just $ WEvent "IncCounter"
-      | (wseTriggerId e) == "DecrButton" = Just $ WEvent "DecrCounter"
+    wsEvent :: WidgetId -> WSEvent -> Maybe WEvent
+    wsEvent wId e
+      | (wseWidgetId e) == wId && (wseTriggerId e) == "IncButton" = Just $ WEvent "IncCounter"
+      | (wseWidgetId e) == wId && (wseTriggerId e) == "DecrButton" = Just $ WEvent "DecrCounter"
       | otherwise = Nothing
     wRender :: WState -> Html ()
     wRender (Aeson.Number i') = do

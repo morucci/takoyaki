@@ -34,13 +34,15 @@ swapToText sw = case sw of
   InnerHTML -> "innerHTML"
   BeforeBegin -> "beforebegin"
 
-type Id = Text
+type WidgetId = Text
+
+type TriggerId = Text
 
 type Trigger = Text
 
 data WSEvent = WSEvent
-  { wseWidgetId :: Id,
-    wseTriggerId :: Id
+  { wseWidgetId :: WidgetId,
+    wseTriggerId :: TriggerId
   }
   deriving (Show)
 

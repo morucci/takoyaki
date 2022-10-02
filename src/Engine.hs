@@ -8,7 +8,7 @@ import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import Data.Text.Lazy (toStrict)
-import Htmx (Id, Trigger, WSEvent, WSwapStrategy, hxSwapOOB, hxTrigger, hxVals, swapToText, wsSend)
+import Htmx (Trigger, WSEvent, WSwapStrategy, WidgetId, hxSwapOOB, hxTrigger, hxVals, swapToText, wsSend)
 import Lucid (Html, with)
 import Lucid.Html5
 import Prelude
@@ -17,14 +17,14 @@ data WEvent = WEvent Text
 
 type WState = Aeson.Value
 
-type WStore = Map.Map Id Widget
+type WStore = Map.Map WidgetId Widget
 
 type Registry = TVar WStore
 
 data Widget = Widget
-  { wId :: Id,
+  { wId :: WidgetId,
     wSwap :: WSwapStrategy,
-    wsEvent :: WSEvent -> Maybe WEvent,
+    wsEvent :: WidgetId -> WSEvent -> Maybe WEvent,
     wRender :: WState -> Html (),
     wState :: WState,
     wStateUpdate :: WState -> WEvent -> WState,
@@ -37,7 +37,7 @@ initWStore = newTVar Map.empty
 addWidget :: Registry -> Widget -> STM ()
 addWidget st w = modifyTVar st $ Map.insert (wId w) w
 
-getWidgetIds :: Registry -> STM [Id]
+getWidgetIds :: Registry -> STM [WidgetId]
 getWidgetIds reg = Map.keys <$> readTVar reg
 
 getWidgets :: Registry -> STM [Widget]
@@ -48,16 +48,16 @@ getWidgetsEvents reg event = do
   widgets <- getWidgets reg
   catMaybes <$> mapM go widgets
   where
-    go w = pure $ wsEvent w event
+    go w = pure $ wsEvent w (wId w) event
 
-renderWidget :: Registry -> Id -> STM (Html ())
+renderWidget :: Registry -> WidgetId -> STM (Html ())
 renderWidget reg wid = do
   st <- readTVar reg
   case Map.lookup wid st of
     Just w -> pure $ widgetRender w
     Nothing -> pure mempty
 
-processEventWidget :: Registry -> WSEvent -> Id -> STM (Maybe (Html ()))
+processEventWidget :: Registry -> WSEvent -> WidgetId -> STM (Maybe (Html ()))
 processEventWidget reg event wid = do
   st <- readTVar reg
   let newWidgetM = case Map.lookup wid st of
@@ -76,7 +76,7 @@ processEventWidgets reg event = do
 
 widgetHandleEvent :: WSEvent -> Widget -> Maybe Widget
 widgetHandleEvent wsevent widget = do
-  case (wsEvent widget wsevent) of
+  case (wsEvent widget (wId widget) wsevent) of
     Just wEvent -> do
       let newState = wStateUpdate widget (wState widget) wEvent
           newWidget = widget {wState = newState}
@@ -97,7 +97,7 @@ widgetRender w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
         $ Aeson.fromList [("widgetId", wId w)]
 
 -- If trigger not specified then the fallback is the natural event
-withEvent :: Id -> Maybe Trigger -> Html () -> Html ()
+withEvent :: WidgetId -> Maybe Trigger -> Html () -> Html ()
 withEvent eid triggerM elm =
   let elm' = with elm [id_ eid, wsSend ""]
    in case triggerM of
