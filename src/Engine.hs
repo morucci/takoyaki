@@ -35,7 +35,7 @@ initWStore :: STM Registry
 initWStore = newTVar Map.empty
 
 addWidget :: Registry -> Widget -> STM ()
-addWidget st w = modifyTVar st $ Map.insert (wId w) w
+addWidget st w = modifyTVar st $ Map.insert w.wId w
 
 getWidgetIds :: Registry -> STM [WidgetId]
 getWidgetIds reg = Map.keys <$> readTVar reg
@@ -48,7 +48,7 @@ getWidgetsEvents reg event = do
   widgets <- getWidgets reg
   catMaybes <$> mapM go widgets
   where
-    go w = pure $ wsEvent w (wId w) event
+    go w = pure $ wsEvent w w.wId event
 
 renderWidget :: Registry -> WidgetId -> STM (Html ())
 renderWidget reg wid = do
@@ -76,9 +76,9 @@ processEventWidgets reg event = do
 
 widgetHandleEvent :: WSEvent -> Widget -> Maybe Widget
 widgetHandleEvent wsevent widget = do
-  case (wsEvent widget (wId widget) wsevent) of
+  case (wsEvent widget widget.wId wsevent) of
     Just wEvent -> do
-      let newState = wStateUpdate widget (wState widget) wEvent
+      let newState = wStateUpdate widget widget.wState wEvent
           newWidget = widget {wState = newState}
       pure newWidget
     Nothing -> Nothing
@@ -87,14 +87,14 @@ widgetRender :: Widget -> Html ()
 widgetRender w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
   where
     elm = case wTrigger w of
-      Nothing -> with baseElm [id_ (wId w)]
-      Just triggerM -> withEvent (wId w) triggerM baseElm
-    baseElm = div_ (wRender w $ wState w)
+      Nothing -> with baseElm [id_ w.wId]
+      Just triggerM -> withEvent w.wId triggerM baseElm
+    baseElm = div_ $ wRender w w.wState
     wIdVal =
       hxVals
         . toStrict
         . Aeson.encodeToLazyText
-        $ Aeson.fromList [("widgetId", wId w)]
+        $ Aeson.fromList [("widgetId", w.wId)]
 
 -- If trigger not specified then the fallback is the natural event
 withEvent :: WidgetId -> Maybe Trigger -> Html () -> Html ()

@@ -82,8 +82,8 @@ w1 =
   where
     wsEvent :: WidgetId -> WSEvent -> Maybe WEvent
     wsEvent wId e
-      | (wseWidgetId e) == wId && (wseTriggerId e) == "IncButton" = Just $ WEvent "IncCounter"
-      | (wseWidgetId e) == wId && (wseTriggerId e) == "DecrButton" = Just $ WEvent "DecrCounter"
+      | e.wseWidgetId == wId && e.wseTriggerId == "IncButton" = Just $ WEvent "IncCounter"
+      | e.wseWidgetId == wId && e.wseTriggerId == "DecrButton" = Just $ WEvent "DecrCounter"
       | otherwise = Nothing
     wRender :: WState -> Html ()
     wRender (Aeson.Number i') = do
@@ -181,7 +181,6 @@ expWSHandler widgets conn = do
       counterW <- renderWidget registry "Counter"
       pure $ div_ [id_ "my-dom"] $ do
         counterW
-    -- handleDataMessage :: IsWEvent e => Registry s e -> WS.DataMessage -> IO ()
     handleDataMessage registry queue msg = do
       let eventM = decodeEvent msg
       putStrLn $ "payload received: " <> show eventM
