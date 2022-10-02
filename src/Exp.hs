@@ -55,7 +55,7 @@ expServer :: Server ExpAPI
 expServer =
   xstaticServant (xStaticFiles <> [XStatic.tailwind])
     :<|> pure expHTMLHandler
-    :<|> expWSHandler [w1]
+    :<|> expWSHandler [w1, w1']
 
 -- | Create the web application
 expApp :: Wai.Application
@@ -63,11 +63,17 @@ expApp = serve (Proxy @ExpAPI) $ expServer
 
 -- | Start the Warp WEB server to serve the application
 runServer :: IO ()
-runServer = Warp.run 8091 $ expApp
+runServer = Warp.run 8092 $ expApp
 
 data CounterEvent = IncCounter | DecrCounter
 
+data Counter2Event = Inc2Counter | Decr2Counter
+
+-- data SwitchEvent = Switch
+
 instance IsWEvent CounterEvent
+
+-- instance IsWEvent SwitchEvent
 
 w1 :: Widget Int CounterEvent
 w1 =
@@ -98,6 +104,64 @@ w1 =
       IncCounter -> s + 1
       DecrCounter -> s - 1
     wTrigger = Nothing
+
+w1' :: Widget Int Counter2Event
+w1' =
+  Widget
+    { wId = "Counter2",
+      wSwap = InnerHTML,
+      wsEvent,
+      wRender,
+      wState = 0 :: Int,
+      wStateUpdate,
+      wTrigger
+    }
+  where
+    wsEvent :: WSEvent -> Maybe Counter2Event
+    wsEvent e
+      | (wseTriggerId e) == "IncButton" = Just Inc2Counter
+      | (wseTriggerId e) == "DecrButton" = Just Decr2Counter
+      | otherwise = Nothing
+    wRender :: Int -> Html ()
+    wRender s = do
+      div_ $ do
+        span_ $ do
+          withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
+          withEvent "DecrButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
+          span_ [class_ "mx-2"] $ toHtml $ show s
+    wStateUpdate :: Int -> Counter2Event -> Int
+    wStateUpdate s e = case e of
+      Inc2Counter -> s + 1
+      Decr2Counter -> s - 1
+    wTrigger = Nothing
+
+-- w2 :: Widget Bool SwitchEvent
+-- w2 =
+--   Widget
+--     { wId = "Switch",
+--       wSwap = InnerHTML,
+--       wsEvent,
+--       wRender,
+--       wState = False :: Bool,
+--       wStateUpdate,
+--       wTrigger
+--     }
+--   where
+--     wsEvent :: WSEvent -> Maybe SwitchEvent
+--     wsEvent e
+--       | (wseTriggerId e) == "SwitchButton" = Just Switch
+--       | otherwise = Nothing
+--     wRender :: Bool -> Html ()
+--     wRender s = do
+--       div_ $ do
+--         span_ $ do
+--           withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
+--           withEvent "DecrButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
+--           span_ [class_ "mx-2"] $ toHtml $ show s
+--     wStateUpdate :: Bool -> SwitchEvent -> Bool
+--     wStateUpdate s e = case e of
+--       Switch -> not s
+--     wTrigger = Nothing
 
 expWSHandler :: IsWEvent e => [Widget s e] -> WS.Connection -> Handler ()
 expWSHandler widgets conn = do

@@ -6,7 +6,7 @@ TODO: Add description
 
 ```
 nix run
-firefox http://127.0.0.1:8091
+firefox http://127.0.0.1:8092
 ```
 
 ## Hack
@@ -14,6 +14,6 @@ firefox http://127.0.0.1:8091
 ```Shell
 nix develop
 ghcid -W -c 'cabal repl' -r="Exp.runServer"
-firefox http://127.0.0.1:8091
+firefox http://127.0.0.1:8092
 ```
 

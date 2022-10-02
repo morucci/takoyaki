@@ -15,11 +15,9 @@ type WStore s e = Map.Map Id (Widget s e)
 
 type Registry s e = TVar (WStore s e)
 
--- data WEvent
-
 class IsWEvent e
 
-data IsWEvent e => Widget s e = Widget
+data Widget s e = Widget
   { wId :: Id,
     wSwap :: WSwapStrategy,
     wsEvent :: WSEvent -> Maybe e,
@@ -41,12 +39,12 @@ getWidgetIds reg = Map.keys <$> readTVar reg
 getWidgets :: Registry s e -> STM [Widget s e]
 getWidgets reg = Map.elems <$> readTVar reg
 
-getWidgetsEvents :: IsWEvent e =>  Registry s e -> WSEvent ->  STM [e]
+getWidgetsEvents :: IsWEvent e => Registry s e -> WSEvent -> STM [e]
 getWidgetsEvents reg event = do
-    widgets <- getWidgets reg 
-    catMaybes <$> mapM go widgets
-    where
-      go w = pure $ wsEvent w event
+  widgets <- getWidgets reg
+  catMaybes <$> mapM go widgets
+  where
+    go w = pure $ wsEvent w event
 
 renderWidget :: IsWEvent e => Registry s e -> Id -> STM (Html ())
 renderWidget reg wid = do
@@ -72,7 +70,7 @@ processEventWidgets reg event = do
   ids <- getWidgetIds reg
   catMaybes <$> (mapM (processEventWidget reg event) ids)
 
-widgetHandleEvent ::IsWEvent e =>  WSEvent -> Widget s e -> Maybe (Widget s e)
+widgetHandleEvent :: IsWEvent e => WSEvent -> Widget s e -> Maybe (Widget s e)
 widgetHandleEvent wsevent widget = do
   case (wsEvent widget wsevent) of
     Just wEvent -> do
