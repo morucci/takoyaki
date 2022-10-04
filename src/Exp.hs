@@ -16,7 +16,6 @@ import Control.Concurrent.STM
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.Aeson as Aeson
 import Data.String.Interpolate (i, iii)
-import Data.Text (Text)
 import Engine
   ( WEvent (WEvent, eTarget),
     WState,
@@ -32,6 +31,7 @@ import Engine
 import Htmx
   ( WSEvent (..),
     WSwapStrategy (InnerHTML),
+    WidgetId,
     decodeWSEvent,
     hxExtWS,
     wsConnect,
@@ -59,7 +59,7 @@ expServer :: Server ExpAPI
 expServer =
   xstaticServant (xStaticFiles <> [XStatic.tailwind])
     :<|> pure expHTMLHandler
-    :<|> expWSHandler [counter1W, counter2W]
+    :<|> expWSHandler [counter1W, counter2W, counterControlW, counterDisplayW]
 
 -- | Create the web application
 expApp :: Wai.Application
@@ -69,7 +69,7 @@ expApp = serve (Proxy @ExpAPI) $ expServer
 runServer :: IO ()
 runServer = Warp.run 8092 $ expApp
 
-getCounterW :: Text -> Widget
+getCounterW :: WidgetId -> Widget
 getCounterW wId =
   Widget
     { wId,
@@ -105,6 +105,60 @@ getCounterW wId =
 counter1W, counter2W :: Widget
 counter1W = getCounterW "Counter1"
 counter2W = getCounterW "Counter2"
+
+counterControlW :: Widget
+counterControlW =
+  Widget
+    { wId = "CounterControl",
+      wSwap = InnerHTML,
+      wsEvent,
+      wRender,
+      wState = Aeson.Number 0,
+      wStateUpdate,
+      wTrigger
+    }
+  where
+    wsEvent :: WSEvent -> Maybe WEvent
+    wsEvent e
+      | e.wseTriggerId == "IncButton" = Just $ WEvent "CounterDisplay" "IncCounter"
+      | e.wseTriggerId == "DecrButton" = Just $ WEvent "CounterDisplay" "DecrCounter"
+      | otherwise = Nothing
+    wRender :: WState -> Html ()
+    wRender _ = do
+      div_ $ do
+        span_ $ do
+          withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
+          withEvent "DecrButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
+    wStateUpdate :: WState -> WEvent -> WState
+    wStateUpdate s _ = s
+    wTrigger = Nothing
+
+counterDisplayW :: Widget
+counterDisplayW =
+  Widget
+    { wId = "CounterDisplay",
+      wSwap = InnerHTML,
+      wsEvent,
+      wRender,
+      wState = Aeson.Number 0,
+      wStateUpdate,
+      wTrigger
+    }
+  where
+    wsEvent :: WSEvent -> Maybe WEvent
+    wsEvent _ = Nothing
+    wRender :: WState -> Html ()
+    wRender (Aeson.Number i') = do
+      div_ $ do
+        span_ [class_ "mx-2"] $ toHtml $ show i'
+    wRender _ = error "Unexpected state type"
+    wStateUpdate :: WState -> WEvent -> WState
+    wStateUpdate s@(Aeson.Number i') e = case e of
+      WEvent _ "IncCounter" -> Aeson.Number (i' + 1)
+      WEvent _ "DecrCounter" -> Aeson.Number (i' - 1)
+      _otherwise -> s
+    wStateUpdate _ _ = error "Unexpected state type"
+    wTrigger = Nothing
 
 expWSHandler :: [Widget] -> WS.Connection -> Handler ()
 expWSHandler widgets conn = do
@@ -144,6 +198,8 @@ expWSHandler widgets conn = do
         getDom = do
           counter1W' <- renderWidget registry "Counter1"
           counter2W' <- renderWidget registry "Counter2"
+          counterCW <- renderWidget registry "CounterControl"
+          counterDW <- renderWidget registry "CounterDisplay"
           pure $ div_ [id_ "my-dom"] $ do
             div_ $ do
               p_ "Counter1"
@@ -151,6 +207,11 @@ expWSHandler widgets conn = do
             div_ $ do
               p_ "Counter2"
               counter2W'
+            div_ $ do
+              p_ "CounterControl + CounterDisplay"
+              span_ $ do
+                counterDW
+                counterCW
         handleDataMessage msg = do
           case decodeWSEvent msg of
             Nothing -> pure ()

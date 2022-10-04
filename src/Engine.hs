@@ -52,6 +52,8 @@ renderWidget reg wid = do
     Just w -> pure $ widgetRender w
     Nothing -> pure mempty
 
+-- TODO: Detect if newState )) widget.wState then when equal return STM (Nothing)
+-- Then the caller should not re-render the widget
 processEventWidget :: Registry -> WEvent -> Widget -> STM Widget
 processEventWidget reg event widget = do
   let newState = wStateUpdate widget widget.wState event
