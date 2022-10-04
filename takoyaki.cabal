@@ -32,9 +32,9 @@ common common-options
 
 library
     import:           common-options
-    exposed-modules:  Exp
-                    , Htmx
-                    , Engine
+    exposed-modules:  Takoyaki.Htmx
+                    , Takoyaki.Engine
+                    , Demo.Counter
     build-depends:    servant
                     , servant-lucid
                     , servant-server

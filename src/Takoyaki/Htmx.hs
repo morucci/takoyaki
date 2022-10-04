@@ -1,4 +1,4 @@
-module Htmx where
+module Takoyaki.Htmx where
 
 import Data.Aeson as Aeson (FromJSON, Value (Object, String), decode, withObject)
 import Data.Aeson.Key as Aeson (fromText)

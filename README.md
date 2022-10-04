@@ -1,6 +1,7 @@
 # Takoyaki
 
-TODO: Add description
+Takoyaki is an experiment of a simple reactive Web framework
+built over HTMX.
 
 ## Start
 
@@ -13,7 +14,7 @@ firefox http://127.0.0.1:8092
 
 ```Shell
 nix develop
-ghcid -W -c 'cabal repl' -r="Exp.runServer"
+ghcid -W -c 'cabal repl' -r="Demo.Counter.run"
 firefox http://127.0.0.1:8092
 ```
 
