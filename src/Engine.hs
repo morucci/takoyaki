@@ -24,15 +24,25 @@ type WStore = Map.Map WidgetId Widget
 
 type Registry = TVar WStore
 
+data WStateManager = WStateManager
+  { wState :: WState,
+    wStateUpdate :: WState -> WEvent -> WState
+  }
+
 data Widget = Widget
   { wId :: WidgetId,
     wSwap :: WSwapStrategy,
     wsEvent :: WSEvent -> Maybe WEvent,
-    wRender :: WState -> Html (),
-    wState :: WState,
-    wStateUpdate :: WState -> WEvent -> WState,
+    wRender :: Maybe WState -> Html (),
+    wStateM :: Maybe WStateManager,
     wTrigger :: Maybe (Maybe Trigger)
   }
+
+instance Show WStateManager where
+  show wsm = show wsm.wState
+
+instance Show Widget where
+  show w = "Widget: " <> show w.wId <> " - State: " <> show w.wStateM
 
 initWStore :: STM Registry
 initWStore = newTVar Map.empty
@@ -52,14 +62,15 @@ renderWidget reg wid = do
     Just w -> pure $ widgetRender w
     Nothing -> pure mempty
 
--- TODO: Detect if newState )) widget.wState then when equal return STM (Nothing)
--- Then the caller should not re-render the widget
 processEventWidget :: Registry -> WEvent -> Widget -> STM Widget
 processEventWidget reg event widget = do
-  let newState = wStateUpdate widget widget.wState event
-      newWidget = widget {wState = newState}
-  addWidget reg newWidget
-  pure newWidget
+  case widget.wStateM of
+    Just m@(WStateManager wState wStateUpdate) -> do
+      let newState = wStateUpdate wState event
+          newWidget = widget {wStateM = Just m {wState = newState}}
+      addWidget reg newWidget
+      pure newWidget
+    Nothing -> pure widget
 
 widgetRender :: Widget -> Html ()
 widgetRender w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
@@ -67,7 +78,10 @@ widgetRender w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
     elm = case wTrigger w of
       Nothing -> with baseElm [id_ w.wId]
       Just triggerM -> withEvent w.wId triggerM baseElm
-    baseElm = div_ $ wRender w w.wState
+    baseElm = div_ $ wRender w state
+    state = case w.wStateM of
+      Just (WStateManager wState _) -> Just wState
+      Nothing -> Nothing
     wIdVal =
       hxVals
         . toStrict

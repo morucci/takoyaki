@@ -19,6 +19,7 @@ import Data.String.Interpolate (i, iii)
 import Engine
   ( WEvent (WEvent, eTarget),
     WState,
+    WStateManager (WStateManager),
     Widget (..),
     addWidget,
     getWidget,
@@ -76,8 +77,7 @@ getCounterW wId =
       wSwap = InnerHTML,
       wsEvent,
       wRender,
-      wState = Aeson.Number 0,
-      wStateUpdate,
+      wStateM = Just (WStateManager (Aeson.Number 0) wStateUpdate),
       wTrigger
     }
   where
@@ -86,8 +86,8 @@ getCounterW wId =
       | e.wseTriggerId == "IncButton" = Just $ WEvent wId "IncCounter"
       | e.wseTriggerId == "DecrButton" = Just $ WEvent wId "DecrCounter"
       | otherwise = Nothing
-    wRender :: WState -> Html ()
-    wRender (Aeson.Number i') = do
+    wRender :: Maybe WState -> Html ()
+    wRender (Just (Aeson.Number i')) = do
       div_ $ do
         span_ $ do
           withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
@@ -113,8 +113,7 @@ counterControlW =
       wSwap = InnerHTML,
       wsEvent,
       wRender,
-      wState = Aeson.Number 0,
-      wStateUpdate,
+      wStateM = Nothing,
       wTrigger
     }
   where
@@ -123,14 +122,12 @@ counterControlW =
       | e.wseTriggerId == "IncButton" = Just $ WEvent "CounterDisplay" "IncCounter"
       | e.wseTriggerId == "DecrButton" = Just $ WEvent "CounterDisplay" "DecrCounter"
       | otherwise = Nothing
-    wRender :: WState -> Html ()
+    wRender :: Maybe WState -> Html ()
     wRender _ = do
       div_ $ do
         span_ $ do
           withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
           withEvent "DecrButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
-    wStateUpdate :: WState -> WEvent -> WState
-    wStateUpdate s _ = s
     wTrigger = Nothing
 
 counterDisplayW :: Widget
@@ -140,15 +137,14 @@ counterDisplayW =
       wSwap = InnerHTML,
       wsEvent,
       wRender,
-      wState = Aeson.Number 0,
-      wStateUpdate,
+      wStateM = Just (WStateManager (Aeson.Number 0) wStateUpdate),
       wTrigger
     }
   where
     wsEvent :: WSEvent -> Maybe WEvent
     wsEvent _ = Nothing
-    wRender :: WState -> Html ()
-    wRender (Aeson.Number i') = do
+    wRender :: Maybe WState -> Html ()
+    wRender (Just (Aeson.Number i')) = do
       div_ $ do
         span_ [class_ "mx-2"] $ toHtml $ show i'
     wRender _ = error "Unexpected state type"
@@ -176,11 +172,7 @@ expWSHandler widgets conn = do
         mapM (processEventWidget registry event) widgetM
       case widgetToRenderM of
         Just widgetToRender -> do
-          putStrLn $
-            "Rendering widget: "
-              <> show widgetToRender.wId
-              <> " State: "
-              <> show widgetToRender.wState
+          putStrLn $ "Rendering widget: " <> show widgetToRender
           WS.sendTextData conn $ renderBS $ widgetRender widgetToRender
         Nothing -> pure ()
       handleS queue registry
