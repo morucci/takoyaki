@@ -12,6 +12,7 @@
 module Demo.Counter where
 
 import Control.Concurrent.STM
+import Control.Monad.State (MonadState (put), State, get)
 import qualified Data.Aeson as Aeson
 import Lucid (Html, ToHtml (toHtml))
 import Lucid.Html5
@@ -19,7 +20,6 @@ import Takoyaki.Engine
   ( Registry,
     WEvent (WEvent),
     WState,
-    WStateManager (WStateManager),
     Widget (..),
     renderWidget,
     runServer,
@@ -39,7 +39,8 @@ getCounterW wId =
       wSwap = InnerHTML,
       wsEvent,
       wRender,
-      wStateM = Just (WStateManager (Aeson.Number 0) wStateUpdate),
+      wState = Just (Aeson.Number 0),
+      wStateUpdate,
       wTrigger
     }
   where
@@ -48,20 +49,24 @@ getCounterW wId =
       | e.wseTriggerId == "IncButton" = Just $ WEvent wId "IncCounter"
       | e.wseTriggerId == "DecrButton" = Just $ WEvent wId "DecrCounter"
       | otherwise = Nothing
-    wRender :: Maybe WState -> Html ()
-    wRender (Just (Aeson.Number i')) = do
-      div_ $ do
-        span_ $ do
-          withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
-          withEvent "DecrButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
-          span_ [class_ "mx-2"] $ toHtml $ show i'
-    wRender _ = error "Unexpected state type"
-    wStateUpdate :: WState -> WEvent -> WState
-    wStateUpdate s@(Aeson.Number i') e = case e of
-      WEvent _ "IncCounter" -> Aeson.Number (i' + 1)
-      WEvent _ "DecrCounter" -> Aeson.Number (i' - 1)
-      _otherwise -> s
-    wStateUpdate _ _ = error "Unexpected state type"
+    wRender :: State (Maybe WState) (Html ())
+    wRender = do
+      ws <- get
+      case ws of
+        Just (Aeson.Number i') -> pure $ div_ $ do
+          span_ $ do
+            withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
+            withEvent "DecrButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
+            span_ [class_ "mx-2"] $ toHtml $ show i'
+        _otherwise -> error "Unexpected widget state"
+    wStateUpdate :: WEvent -> State (Maybe WState) ()
+    wStateUpdate e = do
+      ws <- get
+      case (ws, e) of
+        (Just (Aeson.Number i'), WEvent _ "IncCounter") -> put . Just $ Aeson.Number (i' + 1)
+        (Just (Aeson.Number i'), WEvent _ "DecrCounter") -> put . Just $ Aeson.Number (i' - 1)
+        _otherwise -> put ws
+      pure ()
     wTrigger = Nothing
 
 counter1W, counter2W :: Widget
@@ -75,7 +80,8 @@ counterControlW =
       wSwap = InnerHTML,
       wsEvent,
       wRender,
-      wStateM = Nothing,
+      wState = Nothing,
+      wStateUpdate = const $ pure (),
       wTrigger
     }
   where
@@ -84,9 +90,9 @@ counterControlW =
       | e.wseTriggerId == "IncButton" = Just $ WEvent "CounterDisplay" "IncCounter"
       | e.wseTriggerId == "DecrButton" = Just $ WEvent "CounterDisplay" "DecrCounter"
       | otherwise = Nothing
-    wRender :: Maybe WState -> Html ()
-    wRender _ = do
-      div_ $ do
+    wRender :: State (Maybe WState) (Html ())
+    wRender = do
+      pure $ div_ $ do
         span_ $ do
           withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
           withEvent "DecrButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
@@ -99,23 +105,27 @@ counterDisplayW =
       wSwap = InnerHTML,
       wsEvent,
       wRender,
-      wStateM = Just (WStateManager (Aeson.Number 0) wStateUpdate),
+      wState = Just (Aeson.Number 0),
+      wStateUpdate,
       wTrigger
     }
   where
     wsEvent :: WSEvent -> Maybe WEvent
     wsEvent _ = Nothing
-    wRender :: Maybe WState -> Html ()
-    wRender (Just (Aeson.Number i')) = do
-      div_ $ do
-        span_ [class_ "mx-2"] $ toHtml $ show i'
-    wRender _ = error "Unexpected state type"
-    wStateUpdate :: WState -> WEvent -> WState
-    wStateUpdate s@(Aeson.Number i') e = case e of
-      WEvent _ "IncCounter" -> Aeson.Number (i' + 1)
-      WEvent _ "DecrCounter" -> Aeson.Number (i' - 1)
-      _otherwise -> s
-    wStateUpdate _ _ = error "Unexpected state type"
+    wRender :: State (Maybe WState) (Html ())
+    wRender = do
+      ws <- get
+      case ws of
+        Just (Aeson.Number i') -> pure $ div_ $ span_ [class_ "mx-2"] $ toHtml $ show i'
+        _otherwise -> error "Unexpected widget state"
+    wStateUpdate :: WEvent -> State (Maybe WState) ()
+    wStateUpdate e = do
+      ws <- get
+      case (ws, e) of
+        (Just (Aeson.Number i'), WEvent _ "IncCounter") -> put . Just $ Aeson.Number (i' + 1)
+        (Just (Aeson.Number i'), WEvent _ "DecrCounter") -> put . Just $ Aeson.Number (i' - 1)
+        _otherwise -> put ws
+      pure ()
     wTrigger = Nothing
 
 run :: IO ()

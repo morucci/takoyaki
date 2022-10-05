@@ -3,6 +3,9 @@ module Takoyaki.Engine where
 import Control.Concurrent.Async (concurrently_)
 import Control.Concurrent.STM (STM, TVar, atomically, modifyTVar, newTBQueue, newTVar, readTBQueue, readTVar, writeTBQueue)
 import Control.Monad.IO.Class (liftIO)
+-- import Servant (Get, Handler, Raw, Server, type (:<|>), type (:>))
+
+import Control.Monad.State (State, evalState, execState)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.KeyMap as Aeson
 import qualified Data.Aeson.Text as Aeson
@@ -17,7 +20,6 @@ import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Network.WebSockets as WS
 import Servant
--- import Servant (Get, Handler, Raw, Server, type (:<|>), type (:>))
 import Servant.API.WebSocket (WebSocket)
 import Servant.HTML.Lucid (HTML)
 import Servant.XStatic (xstaticServant)
@@ -53,25 +55,18 @@ type Registry = TVar WStore
 
 type DomInit = Registry -> STM (Html ())
 
-data WStateManager = WStateManager
-  { wState :: WState,
-    wStateUpdate :: WState -> WEvent -> WState
-  }
-
 data Widget = Widget
   { wId :: WidgetId,
     wSwap :: WSwapStrategy,
     wsEvent :: WSEvent -> Maybe WEvent,
-    wRender :: Maybe WState -> Html (),
-    wStateM :: Maybe WStateManager,
+    wRender :: State (Maybe WState) (Html ()),
+    wState :: Maybe WState,
+    wStateUpdate :: WEvent -> State (Maybe WState) (),
     wTrigger :: Maybe (Maybe Trigger)
   }
 
-instance Show WStateManager where
-  show wsm = show wsm.wState
-
 instance Show Widget where
-  show w = "Widget: " <> show w.wId <> " - State: " <> show w.wStateM
+  show w = "Widget: " <> show w.wId <> " - State: " <> show w.wState
 
 addWidget :: Registry -> Widget -> STM ()
 addWidget st w = modifyTVar st $ Map.insert w.wId w
@@ -95,14 +90,11 @@ renderWidget reg wid = do
     Nothing -> pure mempty
 
 processEventWidget :: Registry -> WEvent -> Widget -> STM Widget
-processEventWidget reg event widget = do
-  case widget.wStateM of
-    Just m@(WStateManager wState wStateUpdate) -> do
-      let newState = wStateUpdate wState event
-          newWidget = widget {wStateM = Just m {wState = newState}}
-      addWidget reg newWidget
-      pure newWidget
-    Nothing -> pure widget
+processEventWidget reg event w = do
+  let newState = execState (w.wStateUpdate event) w.wState
+      newWidget = w {wState = newState}
+  addWidget reg newWidget
+  pure newWidget
 
 widgetRender :: Widget -> Html ()
 widgetRender w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
@@ -110,10 +102,7 @@ widgetRender w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
     elm = case wTrigger w of
       Nothing -> with baseElm [id_ w.wId]
       Just triggerM -> withEvent w.wId triggerM baseElm
-    baseElm = div_ $ wRender w state
-    state = case w.wStateM of
-      Just (WStateManager wState _) -> Just wState
-      Nothing -> Nothing
+    baseElm = div_ $ evalState w.wRender w.wState
     wIdVal =
       hxVals
         . toStrict
