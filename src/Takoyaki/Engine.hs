@@ -13,7 +13,7 @@ import qualified Data.Map as Map
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text.Lazy (toStrict)
-import Lucid (Html, renderBS, with)
+import Lucid (Html, ToHtml (toHtml), renderBS, with)
 import Lucid.Html5
 import Lucid.XStatic (xstaticScripts)
 import qualified Network.Wai as Wai
@@ -117,8 +117,8 @@ withEvent eid triggerM elm =
         Just trigger -> with elm' [hxTrigger trigger]
         Nothing -> elm'
 
-expWSHandler :: Registry -> (Registry -> STM (Html ())) -> WS.Connection -> Handler ()
-expWSHandler registry initDom conn = do
+connectionHandler :: Registry -> (Registry -> STM (Html ())) -> WS.Connection -> Handler ()
+connectionHandler registry initDom conn = do
   queue <- liftIO . atomically $ newTBQueue 10
   liftIO $ concurrently_ (handleR queue) (handleS queue)
   where
@@ -155,34 +155,34 @@ expWSHandler registry initDom conn = do
                   Just targetedWidget -> targetedWidget.wsEvent wsEvent
                   Nothing -> Nothing
 
-expHTMLHandler :: Html ()
-expHTMLHandler = do
+bootHandler :: Text -> Html ()
+bootHandler title = do
   doctypehtml_ $ do
     head_ $ do
-      title_ "Experiment"
+      title_ $ (toHtml title)
       meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"]
       xstaticScripts $ xStaticFiles <> [XStatic.tailwind]
     body_ $ do
       div_ [class_ "container mx-auto", hxExtWS, wsConnect "/ws"] $
         div_ [id_ "init"] ""
 
-type ExpAPI =
+type API =
   "xstatic" :> Raw
     :<|> Get '[HTML] (Html ())
     :<|> "ws" :> WebSocket
 
-expServer :: Registry -> DomInit -> Server ExpAPI
-expServer reg idom =
+appServer :: Text -> Registry -> DomInit -> Server API
+appServer title reg idom =
   xstaticServant (xStaticFiles <> [XStatic.tailwind])
-    :<|> pure expHTMLHandler
-    :<|> expWSHandler reg idom
+    :<|> pure (bootHandler title)
+    :<|> connectionHandler reg idom
 
 -- | Create the web application
-expApp :: Registry -> DomInit -> Wai.Application
-expApp reg idom = serve (Proxy @ExpAPI) $ expServer reg idom
+app :: Text -> Registry -> DomInit -> Wai.Application
+app title reg idom = serve (Proxy @API) $ appServer title reg idom
 
 -- | Start the Warp WEB server to serve the application
-runServer :: [Widget] -> DomInit -> IO ()
-runServer widgets idom = do
+runServer :: Text -> [Widget] -> DomInit -> IO ()
+runServer title widgets idom = do
   registry <- atomically $ initRegistry widgets
-  Warp.run 8092 $ expApp registry idom
+  Warp.run 8092 $ app title registry idom

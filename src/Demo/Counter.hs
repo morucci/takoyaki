@@ -1,6 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE RankNTypes #-}
-
 -- |
 -- Module      : Exp
 -- Description : Some experimentation
@@ -28,14 +25,13 @@ import Takoyaki.Engine
 import Takoyaki.Htmx
   ( WSEvent (..),
     WSwapStrategy (InnerHTML),
-    WidgetId,
   )
 import Prelude
 
-getCounterW :: WidgetId -> Widget
-getCounterW wId =
+counter :: Widget
+counter =
   Widget
-    { wId,
+    { wId = "Counter",
       wSwap = InnerHTML,
       wsEvent,
       wRender,
@@ -46,8 +42,8 @@ getCounterW wId =
   where
     wsEvent :: WSEvent -> Maybe WEvent
     wsEvent e
-      | e.wseTriggerId == "IncButton" = Just $ WEvent wId "IncCounter"
-      | e.wseTriggerId == "DecrButton" = Just $ WEvent wId "DecrCounter"
+      | e.wseTriggerId == "IncButton" = Just $ WEvent "Counter" "IncCounter"
+      | e.wseTriggerId == "DecrButton" = Just $ WEvent "Counter" "DecrCounter"
       | otherwise = Nothing
     wRender :: State (Maybe WState) (Html ())
     wRender = do
@@ -68,10 +64,6 @@ getCounterW wId =
         _otherwise -> put ws
       pure ()
     wTrigger = Nothing
-
-counter1W, counter2W :: Widget
-counter1W = getCounterW "Counter1"
-counter2W = getCounterW "Counter2"
 
 counterControlW :: Widget
 counterControlW =
@@ -129,22 +121,18 @@ counterDisplayW =
     wTrigger = Nothing
 
 run :: IO ()
-run = runServer widget initDom
+run = runServer "Takoyaki Demo" widget initDom
   where
-    widget = [counter1W, counter2W, counterControlW, counterDisplayW]
+    widget = [counter, counterControlW, counterDisplayW]
     initDom :: Registry -> STM (Html ())
     initDom registry = do
-      counter1W' <- renderWidget registry "Counter1"
-      counter2W' <- renderWidget registry "Counter2"
+      counter' <- renderWidget registry "Counter"
       counterCW <- renderWidget registry "CounterControl"
       counterDW <- renderWidget registry "CounterDisplay"
       pure $ div_ [id_ "my-dom"] $ do
         div_ $ do
-          p_ "Counter1"
-          counter1W'
-        div_ $ do
-          p_ "Counter2"
-          counter2W'
+          p_ "Counter"
+          counter'
         div_ $ do
           p_ "CounterControl + CounterDisplay"
           span_ $ do
