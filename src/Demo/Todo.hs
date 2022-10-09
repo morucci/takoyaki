@@ -2,6 +2,7 @@ module Demo.Todo where
 
 import Control.Concurrent.STM
 import Control.Monad.State
+import Data.Set (fromList)
 import Lucid (Html)
 import Lucid.Html5
 import Takoyaki.Engine
@@ -17,16 +18,16 @@ todoMainW =
       wRender,
       wState = Nothing,
       wStateUpdate = const $ pure (),
-      wTrigger = Nothing
+      wTrigger = Nothing,
+      wChildWidget = fromList [todoInputFormW.wId, todoListW.wId]
     }
   where
-    wRender :: State (Maybe WState) (Html ())
-    -- wRender = pure $ do
-    wRender = pure $ pure ()
-
--- div_ [class_ "bg-gray-200"] $ do
---   h1_ "Test"
---   renderWidget undefined "TodoInputFormW"
+    wRender :: RStore -> State (Maybe WState) (Html ())
+    wRender rs = pure $ do
+      div_ [class_ "bg-gray-200"] $ do
+        h1_ "Test"
+        widgetRenderFromRStore "TodoListW" rs
+        widgetRenderFromRStore "TodoInputFormW" rs
 
 todoInputFormW :: Widget
 todoInputFormW =
@@ -37,21 +38,40 @@ todoInputFormW =
       wRender,
       wState = Nothing,
       wStateUpdate = const $ pure (),
-      wTrigger = Nothing
+      wTrigger = Nothing,
+      wChildWidget = mempty
     }
   where
-    wRender :: State (Maybe WState) (Html ())
-    wRender = pure $ do
+    wRender :: RStore -> State (Maybe WState) (Html ())
+    wRender _rs = pure $ do
       div_ [class_ "bg-gray-100"] $ do
         form_ [name_ "todo-input"] $ do
           label_ [for_ "task-name"] "Task name"
           input_ [name_ "task-name", type_ "text"]
 
+todoListW :: Widget
+todoListW =
+  Widget
+    { wId = "TodoListW",
+      wSwap = InnerHTML,
+      wsEvent = const Nothing,
+      wRender,
+      wState = Nothing,
+      wStateUpdate = const $ pure (),
+      wTrigger = Nothing,
+      wChildWidget = mempty
+    }
+  where
+    wRender :: RStore -> State (Maybe WState) (Html ())
+    wRender _rs = pure $ do
+      div_ [class_ "bg-gray-300"] "Empty Todo"
+
 run :: IO ()
 run = runServer "Takoyaki Todo Demo" widget initDom
   where
-    widget = [todoMainW, todoInputFormW]
+    widget = [todoMainW, todoInputFormW, todoListW]
     initDom :: Registry -> STM (Html ())
     initDom registry = do
-      todoMainW' <- renderWidget registry "TodoMainW"
+      rs <- mkRStore registry (todoMainW.wChildWidget)
+      let todoMainW' = widgetRender rs todoMainW
       pure $ div_ [id_ "my-dom"] $ todoMainW'

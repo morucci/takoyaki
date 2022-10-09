@@ -10,6 +10,8 @@ import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.KeyMap as Aeson
 import qualified Data.Aeson.Text as Aeson
 import qualified Data.Map as Map
+import Data.Maybe (catMaybes)
+import Data.Set as Set
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text.Lazy (toStrict)
@@ -55,14 +57,17 @@ type Registry = TVar WStore
 
 type DomInit = Registry -> STM (Html ())
 
+type RStore = Map.Map WidgetId (Html ())
+
 data Widget = Widget
   { wId :: WidgetId,
     wSwap :: WSwapStrategy,
     wsEvent :: WSEvent -> Maybe WEvent,
-    wRender :: State (Maybe WState) (Html ()),
+    wRender :: RStore -> State (Maybe WState) (Html ()),
     wState :: Maybe WState,
     wStateUpdate :: WEvent -> State (Maybe WState) (),
-    wTrigger :: Maybe (Maybe Trigger)
+    wTrigger :: Maybe (Maybe Trigger),
+    wChildWidget :: Set WidgetId
   }
 
 instance Show Widget where
@@ -82,12 +87,19 @@ initRegistry widgets = do
   mapM_ (addWidget reg) widgets
   pure reg
 
-renderWidget :: Registry -> WidgetId -> STM (Html ())
-renderWidget reg wid = do
-  st <- readTVar reg
-  case Map.lookup wid st of
-    Just w -> pure $ widgetRender w
-    Nothing -> pure mempty
+mkRStore :: Registry -> Set WidgetId -> STM RStore
+mkRStore reg widgets = do
+  rs <- mapM rW $ toList widgets
+  pure $ Map.fromList $ catMaybes rs
+  where
+    rW :: WidgetId -> STM (Maybe (WidgetId, Html ()))
+    rW widgetId = do
+      widgetFromRegistryM <- getWidget reg widgetId
+      case widgetFromRegistryM of
+        Just widget -> do
+          rs' <- mkRStore reg (widget.wChildWidget)
+          pure $ Just (widgetId, widgetRender rs' widget)
+        Nothing -> pure Nothing
 
 processEventWidget :: Registry -> WEvent -> Widget -> STM Widget
 processEventWidget reg event w = do
@@ -96,13 +108,18 @@ processEventWidget reg event w = do
   addWidget reg newWidget
   pure newWidget
 
-widgetRender :: Widget -> Html ()
-widgetRender w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
+widgetRenderFromRStore :: WidgetId -> RStore -> Html ()
+widgetRenderFromRStore w rs = case Map.lookup w rs of
+  Just r -> r
+  Nothing -> pure ()
+
+widgetRender :: RStore -> Widget -> Html ()
+widgetRender rs w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
   where
     elm = case wTrigger w of
       Nothing -> with baseElm [id_ w.wId]
       Just triggerM -> withEvent w.wId triggerM baseElm
-    baseElm = div_ $ evalState w.wRender w.wState
+    baseElm = div_ $ evalState (w.wRender rs) w.wState
     wIdVal =
       hxVals
         . toStrict
@@ -130,7 +147,8 @@ connectionHandler registry initDom conn = do
       case widgetToRenderM of
         Just widgetToRender -> do
           putStrLn $ "Rendering widget: " <> show widgetToRender
-          WS.sendTextData conn $ renderBS $ widgetRender widgetToRender
+          rs <- atomically $ mkRStore registry widgetToRender.wChildWidget
+          WS.sendTextData conn $ renderBS $ widgetRender rs widgetToRender
         Nothing -> pure ()
       handleS queue
     handleR queue = do

@@ -18,8 +18,8 @@ import Takoyaki.Engine
     WEvent (WEvent),
     WState,
     Widget (..),
-    renderWidget,
     runServer,
+    widgetRender,
     withEvent,
   )
 import Takoyaki.Htmx
@@ -34,10 +34,11 @@ counter =
     { wId = "Counter",
       wSwap = InnerHTML,
       wsEvent,
-      wRender,
+      wRender = const wRender,
       wState = Just (Aeson.Number 0),
       wStateUpdate,
-      wTrigger
+      wTrigger,
+      wChildWidget = mempty
     }
   where
     wsEvent :: WSEvent -> Maybe WEvent
@@ -71,10 +72,11 @@ counterControlW =
     { wId = "CounterControl",
       wSwap = InnerHTML,
       wsEvent,
-      wRender,
+      wRender = const wRender,
       wState = Nothing,
       wStateUpdate = const $ pure (),
-      wTrigger
+      wTrigger,
+      wChildWidget = mempty
     }
   where
     wsEvent :: WSEvent -> Maybe WEvent
@@ -96,10 +98,11 @@ counterDisplayW =
     { wId = "CounterDisplay",
       wSwap = InnerHTML,
       wsEvent,
-      wRender,
+      wRender = const wRender,
       wState = Just (Aeson.Number 0),
       wStateUpdate,
-      wTrigger
+      wTrigger,
+      wChildWidget = mempty
     }
   where
     wsEvent :: WSEvent -> Maybe WEvent
@@ -125,10 +128,10 @@ run = runServer "Takoyaki Demo" widget initDom
   where
     widget = [counter, counterControlW, counterDisplayW]
     initDom :: Registry -> STM (Html ())
-    initDom registry = do
-      counter' <- renderWidget registry "Counter"
-      counterCW <- renderWidget registry "CounterControl"
-      counterDW <- renderWidget registry "CounterDisplay"
+    initDom _registry = do
+      let counter' = widgetRender mempty counter
+          counterCW = widgetRender mempty counterControlW
+          counterDW = widgetRender mempty counterDisplayW
       pure $ div_ [id_ "my-dom"] $ do
         div_ $ do
           p_ "Counter"
