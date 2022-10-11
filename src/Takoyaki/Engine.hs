@@ -57,17 +57,17 @@ type Registry = TVar WStore
 
 type DomInit = Registry -> STM (Html ())
 
-type RStore = Map.Map WidgetId (Html ())
+type ChildsStore = Map.Map WidgetId (Html ())
 
 data Widget = Widget
   { wId :: WidgetId,
     wSwap :: WSwapStrategy,
     wsEvent :: WSEvent -> Maybe WEvent,
-    wRender :: RStore -> State (Maybe WState) (Html ()),
+    wRender :: ChildsStore -> State (Maybe WState) (Html ()),
     wState :: Maybe WState,
     wStateUpdate :: WEvent -> State (Maybe WState) (),
     wTrigger :: Maybe (Maybe Trigger),
-    wChildWidget :: Set WidgetId
+    wChilds :: Set WidgetId
   }
 
 instance Show Widget where
@@ -87,18 +87,18 @@ initRegistry widgets = do
   mapM_ (addWidget reg) widgets
   pure reg
 
-mkRStore :: Registry -> Set WidgetId -> STM RStore
-mkRStore reg widgets = do
-  rs <- mapM rW $ toList widgets
-  pure $ Map.fromList $ catMaybes rs
+mkChildsStore :: Registry -> Set WidgetId -> STM ChildsStore
+mkChildsStore reg widgets = do
+  rs <- mapM go $ toList widgets
+  pure . Map.fromList $ catMaybes rs
   where
-    rW :: WidgetId -> STM (Maybe (WidgetId, Html ()))
-    rW widgetId = do
-      widgetFromRegistryM <- getWidget reg widgetId
+    go :: WidgetId -> STM (Maybe (WidgetId, Html ()))
+    go wId = do
+      widgetFromRegistryM <- getWidget reg wId
       case widgetFromRegistryM of
         Just widget -> do
-          rs' <- mkRStore reg (widget.wChildWidget)
-          pure $ Just (widgetId, widgetRender rs' widget)
+          rs' <- mkChildsStore reg widget.wChilds
+          pure $ Just (wId, widgetRender rs' widget)
         Nothing -> pure Nothing
 
 processEventWidget :: Registry -> WEvent -> Widget -> STM Widget
@@ -108,12 +108,12 @@ processEventWidget reg event w = do
   addWidget reg newWidget
   pure newWidget
 
-widgetRenderFromRStore :: WidgetId -> RStore -> Html ()
-widgetRenderFromRStore w rs = case Map.lookup w rs of
+widgetRenderFromChildsStore :: WidgetId -> ChildsStore -> Html ()
+widgetRenderFromChildsStore w rs = case Map.lookup w rs of
   Just r -> r
   Nothing -> pure ()
 
-widgetRender :: RStore -> Widget -> Html ()
+widgetRender :: ChildsStore -> Widget -> Html ()
 widgetRender rs w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
   where
     elm = case wTrigger w of
@@ -147,7 +147,7 @@ connectionHandler registry initDom conn = do
       case widgetToRenderM of
         Just widgetToRender -> do
           putStrLn $ "Rendering widget: " <> show widgetToRender
-          rs <- atomically $ mkRStore registry widgetToRender.wChildWidget
+          rs <- atomically $ mkChildsStore registry widgetToRender.wChilds
           WS.sendTextData conn $ renderBS $ widgetRender rs widgetToRender
         Nothing -> pure ()
       handleS queue

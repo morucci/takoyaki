@@ -19,15 +19,15 @@ todoMainW =
       wState = Nothing,
       wStateUpdate = const $ pure (),
       wTrigger = Nothing,
-      wChildWidget = fromList [todoInputFormW.wId, todoListW.wId]
+      wChilds = fromList [todoInputFormW.wId, todoListW.wId]
     }
   where
-    wRender :: RStore -> State (Maybe WState) (Html ())
+    wRender :: ChildsStore -> State (Maybe WState) (Html ())
     wRender rs = pure $ do
       div_ [class_ "bg-gray-200"] $ do
         h1_ "Test"
-        widgetRenderFromRStore "TodoListW" rs
-        widgetRenderFromRStore "TodoInputFormW" rs
+        widgetRenderFromChildsStore "TodoListW" rs
+        widgetRenderFromChildsStore "TodoInputFormW" rs
 
 todoInputFormW :: Widget
 todoInputFormW =
@@ -39,10 +39,10 @@ todoInputFormW =
       wState = Nothing,
       wStateUpdate = const $ pure (),
       wTrigger = Nothing,
-      wChildWidget = mempty
+      wChilds = mempty
     }
   where
-    wRender :: RStore -> State (Maybe WState) (Html ())
+    wRender :: ChildsStore -> State (Maybe WState) (Html ())
     wRender _rs = pure $ do
       div_ [class_ "bg-gray-100"] $ do
         form_ [name_ "todo-input"] $ do
@@ -59,10 +59,10 @@ todoListW =
       wState = Nothing,
       wStateUpdate = const $ pure (),
       wTrigger = Nothing,
-      wChildWidget = mempty
+      wChilds = mempty
     }
   where
-    wRender :: RStore -> State (Maybe WState) (Html ())
+    wRender :: ChildsStore -> State (Maybe WState) (Html ())
     wRender _rs = pure $ do
       div_ [class_ "bg-gray-300"] "Empty Todo"
 
@@ -72,6 +72,6 @@ run = runServer "Takoyaki Todo Demo" widget initDom
     widget = [todoMainW, todoInputFormW, todoListW]
     initDom :: Registry -> STM (Html ())
     initDom registry = do
-      rs <- mkRStore registry (todoMainW.wChildWidget)
+      rs <- mkChildsStore registry (todoMainW.wChilds)
       let todoMainW' = widgetRender rs todoMainW
       pure $ div_ [id_ "my-dom"] $ todoMainW'

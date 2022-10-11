@@ -38,7 +38,7 @@ counter =
       wState = Just (Aeson.Number 0),
       wStateUpdate,
       wTrigger,
-      wChildWidget = mempty
+      wChilds = mempty
     }
   where
     wsEvent :: WSEvent -> Maybe WEvent
@@ -76,7 +76,7 @@ counterControlW =
       wState = Nothing,
       wStateUpdate = const $ pure (),
       wTrigger,
-      wChildWidget = mempty
+      wChilds = mempty
     }
   where
     wsEvent :: WSEvent -> Maybe WEvent
@@ -102,7 +102,7 @@ counterDisplayW =
       wState = Just (Aeson.Number 0),
       wStateUpdate,
       wTrigger,
-      wChildWidget = mempty
+      wChilds = mempty
     }
   where
     wsEvent :: WSEvent -> Maybe WEvent
