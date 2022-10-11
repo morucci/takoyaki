@@ -16,12 +16,13 @@ xStaticFiles :: [XStatic.XStaticFile]
 xStaticFiles = [XStatic.htmx, XStatic.htmxExtWS]
 
 -- | Attributes definition for Lucid
-hxWS, hxSwapOOB, wsConnect, wsSend, hxTrigger, hxVals :: Text -> Attribute
+hxWS, hxSwapOOB, wsConnect, wsSend, hxTrigger, hxTarget, hxVals :: Text -> Attribute
 hxWS = makeAttribute "hx-ws"
 hxSwapOOB = makeAttribute "hx-swap-oob"
 wsConnect = makeAttribute "ws-connect"
 wsSend = makeAttribute "ws-send"
 hxTrigger = makeAttribute "hx-trigger"
+hxTarget = makeAttribute "hx-target"
 hxVals = makeAttribute "hx-vals"
 
 hxExtWS :: Attribute

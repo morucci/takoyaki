@@ -3,8 +3,6 @@ module Takoyaki.Engine where
 import Control.Concurrent.Async (concurrently_)
 import Control.Concurrent.STM (STM, TVar, atomically, modifyTVar, newTBQueue, newTVar, readTBQueue, readTVar, writeTBQueue)
 import Control.Monad.IO.Class (liftIO)
--- import Servant (Get, Handler, Raw, Server, type (:<|>), type (:>))
-
 import Control.Monad.State (State, evalState, execState)
 import qualified Data.Aeson as Aeson
 import qualified Data.Aeson.KeyMap as Aeson
@@ -26,20 +24,6 @@ import Servant.API.WebSocket (WebSocket)
 import Servant.HTML.Lucid (HTML)
 import Servant.XStatic (xstaticServant)
 import Takoyaki.Htmx
-  ( Trigger,
-    WSEvent (..),
-    WSwapStrategy,
-    WidgetId,
-    decodeWSEvent,
-    hxExtWS,
-    hxSwapOOB,
-    hxTrigger,
-    hxVals,
-    swapToText,
-    wsConnect,
-    wsSend,
-    xStaticFiles,
-  )
 import qualified XStatic.Tailwind as XStatic
 import Prelude
 
@@ -76,6 +60,23 @@ instance Eq Widget where
 
 instance Ord Widget where
   (<=) a b = a.wId <= b.wId
+
+mkWidget :: WidgetId -> Widget
+mkWidget wId =
+  Widget
+    { wId,
+      wSwap = InnerHTML,
+      wsEvent = const Nothing,
+      wRender =
+        const
+          . pure
+          . div_ [class_ "bg-gray-200"]
+          $ "Widget: " <> toHtml wId,
+      wState = Nothing,
+      wStateUpdate = const $ pure (),
+      wTrigger = Nothing,
+      wChilds = mempty
+    }
 
 addWidget :: Registry -> Widget -> STM ()
 addWidget st w = modifyTVar st $ Map.insert w.wId w
@@ -133,8 +134,7 @@ widgetRender rs w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
 widgetRenderInitial :: Registry -> Widget -> STM (Html ())
 widgetRenderInitial reg widget = do
   rs <- mkChildsStore reg (widget.wChilds)
-  let rw = widgetRender rs widget
-  pure $ div_ [id_ "my-dom"] rw
+  pure $ div_ [id_ "init"] $ widgetRender rs widget
 
 -- If trigger not specified then the fallback is the natural event
 withEvent :: WidgetId -> Maybe Trigger -> Html () -> Html ()
@@ -165,7 +165,7 @@ connectionHandler registry mainW conn = do
       liftIO $ WS.withPingThread conn 5 (pure ()) $ do
         putStrLn [i|New connection ...|]
         dom <- atomically $ widgetRenderInitial registry mainW
-        WS.sendTextData conn $ renderBS $ div_ [id_ "init"] dom
+        WS.sendTextData conn $ renderBS dom
         handleClient
       where
         handleClient = do

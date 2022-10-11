@@ -18,27 +18,23 @@ import Takoyaki.Engine
     WEvent (WEvent),
     WState,
     Widget (..),
+    mkWidget,
     runServer,
     widgetRenderFromChildsStore,
     withEvent,
   )
 import Takoyaki.Htmx
   ( WSEvent (..),
-    WSwapStrategy (InnerHTML),
   )
 import Prelude
 
 counterW :: Widget
 counterW =
-  Widget
-    { wId = "Counter",
-      wSwap = InnerHTML,
-      wsEvent,
+  (mkWidget "Counter")
+    { wsEvent,
       wRender = const wRender,
       wState = Just (Aeson.Number 0),
-      wStateUpdate,
-      wTrigger,
-      wChilds = mempty
+      wStateUpdate
     }
   where
     wsEvent :: WSEvent -> Maybe WEvent
@@ -64,19 +60,12 @@ counterW =
         (Just (Aeson.Number i'), WEvent _ "DecrCounter") -> put . Just $ Aeson.Number (i' - 1)
         _otherwise -> put ws
       pure ()
-    wTrigger = Nothing
 
 counterControlW :: Widget
 counterControlW =
-  Widget
-    { wId = "CounterControl",
-      wSwap = InnerHTML,
-      wsEvent,
-      wRender = const wRender,
-      wState = Nothing,
-      wStateUpdate = const $ pure (),
-      wTrigger,
-      wChilds = mempty
+  (mkWidget "CounterControl")
+    { wsEvent,
+      wRender = const wRender
     }
   where
     wsEvent :: WSEvent -> Maybe WEvent
@@ -90,23 +79,15 @@ counterControlW =
         span_ $ do
           withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
           withEvent "DecrButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
-    wTrigger = Nothing
 
 counterDisplayW :: Widget
 counterDisplayW =
-  Widget
-    { wId = "CounterDisplay",
-      wSwap = InnerHTML,
-      wsEvent,
-      wRender = const wRender,
+  (mkWidget "CounterDisplay")
+    { wRender = const wRender,
       wState = Just (Aeson.Number 0),
-      wStateUpdate,
-      wTrigger,
-      wChilds = mempty
+      wStateUpdate
     }
   where
-    wsEvent :: WSEvent -> Maybe WEvent
-    wsEvent _ = Nothing
     wRender :: State (Maybe WState) (Html ())
     wRender = do
       ws <- get
@@ -121,18 +102,11 @@ counterDisplayW =
         (Just (Aeson.Number i'), WEvent _ "DecrCounter") -> put . Just $ Aeson.Number (i' - 1)
         _otherwise -> put ws
       pure ()
-    wTrigger = Nothing
 
 mainW :: Widget
 mainW =
-  Widget
-    { wId = "mainW",
-      wSwap = InnerHTML,
-      wsEvent = const Nothing,
-      wRender,
-      wState = Nothing,
-      wStateUpdate = const $ pure (),
-      wTrigger = Nothing,
+  (mkWidget "mainW")
+    { wRender,
       wChilds = fromList [counterW, counterControlW, counterDisplayW]
     }
   where
@@ -141,15 +115,14 @@ mainW =
       let counter' = widgetRenderFromChildsStore "Counter" rs
           counterCW = widgetRenderFromChildsStore "CounterControl" rs
           counterDW = widgetRenderFromChildsStore "CounterDisplay" rs
-      div_ [id_ "my-dom"] $ do
-        div_ $ do
-          p_ "Counter"
-          counter'
-        div_ $ do
-          p_ "CounterControl + CounterDisplay"
-          span_ $ do
-            counterDW
-            counterCW
+      div_ $ do
+        p_ "Counter"
+        counter'
+      div_ $ do
+        p_ "CounterControl + CounterDisplay"
+        span_ $ do
+          counterDW
+          counterCW
 
 run :: IO ()
 run = runServer "Takoyaki Counter Demo" widgets mainW

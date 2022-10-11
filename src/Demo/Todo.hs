@@ -5,19 +5,12 @@ import Data.Set (fromList)
 import Lucid (Html)
 import Lucid.Html5
 import Takoyaki.Engine
-import Takoyaki.Htmx
 import Prelude
 
 mainW :: Widget
 mainW =
-  Widget
-    { wId = "TodoMainW",
-      wSwap = InnerHTML,
-      wsEvent = const Nothing,
-      wRender,
-      wState = Nothing,
-      wStateUpdate = const $ pure (),
-      wTrigger = Nothing,
+  (mkWidget "TodoMainW")
+    { wRender,
       wChilds = fromList [todoInputFormW, todoListW]
     }
   where
@@ -30,36 +23,17 @@ mainW =
 
 todoInputFormW :: Widget
 todoInputFormW =
-  Widget
-    { wId = "TodoInputFormW",
-      wSwap = InnerHTML,
-      wsEvent = const Nothing,
-      wRender,
-      wState = Nothing,
-      wStateUpdate = const $ pure (),
-      wTrigger = Nothing,
-      wChilds = mempty
-    }
+  (mkWidget "TodoInputFormW") {wRender = const wRender}
   where
-    wRender :: ChildsStore -> State (Maybe WState) (Html ())
-    wRender _rs = pure $ do
+    wRender :: State (Maybe WState) (Html ())
+    wRender = pure $ do
       div_ [class_ "bg-gray-100"] $ do
         form_ [name_ "todo-input"] $ do
           label_ [for_ "task-name"] "Task name"
           input_ [name_ "task-name", type_ "text"]
 
 todoListW :: Widget
-todoListW =
-  Widget
-    { wId = "TodoListW",
-      wSwap = InnerHTML,
-      wsEvent = const Nothing,
-      wRender,
-      wState = Nothing,
-      wStateUpdate = const $ pure (),
-      wTrigger = Nothing,
-      wChilds = mempty
-    }
+todoListW = (mkWidget "TodoListW") {wRender}
   where
     wRender :: ChildsStore -> State (Maybe WState) (Html ())
     wRender _rs = pure $ do
