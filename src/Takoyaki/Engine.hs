@@ -67,11 +67,17 @@ data Widget = Widget
     wState :: Maybe WState,
     wStateUpdate :: WEvent -> State (Maybe WState) (),
     wTrigger :: Maybe (Maybe Trigger),
-    wChilds :: Set WidgetId
+    wChilds :: Set Widget
   }
 
 instance Show Widget where
   show w = "Widget: " <> show w.wId <> " - State: " <> show w.wState
+
+instance Eq Widget where
+  (==) a b = a.wId == b.wId
+
+instance Ord Widget where
+  (<=) a b = a.wId <= b.wId
 
 addWidget :: Registry -> Widget -> STM ()
 addWidget st w = modifyTVar st $ Map.insert w.wId w
@@ -87,18 +93,18 @@ initRegistry widgets = do
   mapM_ (addWidget reg) widgets
   pure reg
 
-mkChildsStore :: Registry -> Set WidgetId -> STM ChildsStore
+mkChildsStore :: Registry -> Set Widget -> STM ChildsStore
 mkChildsStore reg widgets = do
   rs <- mapM go $ toList widgets
   pure . Map.fromList $ catMaybes rs
   where
-    go :: WidgetId -> STM (Maybe (WidgetId, Html ()))
-    go wId = do
-      widgetFromRegistryM <- getWidget reg wId
+    go :: Widget -> STM (Maybe (WidgetId, Html ()))
+    go widget = do
+      widgetFromRegistryM <- getWidget reg widget.wId
       case widgetFromRegistryM of
-        Just widget -> do
-          rs' <- mkChildsStore reg widget.wChilds
-          pure $ Just (wId, widgetRender rs' widget)
+        Just w -> do
+          rs' <- mkChildsStore reg w.wChilds
+          pure $ Just (w.wId, widgetRender rs' widget)
         Nothing -> pure Nothing
 
 processEventWidget :: Registry -> WEvent -> Widget -> STM Widget

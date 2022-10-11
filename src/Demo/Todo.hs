@@ -19,7 +19,7 @@ todoMainW =
       wState = Nothing,
       wStateUpdate = const $ pure (),
       wTrigger = Nothing,
-      wChilds = fromList [todoInputFormW.wId, todoListW.wId]
+      wChilds = fromList [todoInputFormW, todoListW]
     }
   where
     wRender :: ChildsStore -> State (Maybe WState) (Html ())
