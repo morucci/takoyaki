@@ -55,8 +55,6 @@ type WStore = Map.Map WidgetId Widget
 
 type Registry = TVar WStore
 
-type DomInit = Registry -> STM (Html ())
-
 type ChildsStore = Map.Map WidgetId (Html ())
 
 data Widget = Widget
@@ -132,6 +130,12 @@ widgetRender rs w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
         . Aeson.encodeToLazyText
         $ Aeson.fromList [("widgetId", w.wId)]
 
+widgetRenderInitial :: Registry -> Widget -> STM (Html ())
+widgetRenderInitial reg widget = do
+  rs <- mkChildsStore reg (widget.wChilds)
+  let rw = widgetRender rs widget
+  pure $ div_ [id_ "my-dom"] rw
+
 -- If trigger not specified then the fallback is the natural event
 withEvent :: WidgetId -> Maybe Trigger -> Html () -> Html ()
 withEvent eid triggerM elm =
@@ -140,8 +144,8 @@ withEvent eid triggerM elm =
         Just trigger -> with elm' [hxTrigger trigger]
         Nothing -> elm'
 
-connectionHandler :: Registry -> (Registry -> STM (Html ())) -> WS.Connection -> Handler ()
-connectionHandler registry initDom conn = do
+connectionHandler :: Registry -> Widget -> WS.Connection -> Handler ()
+connectionHandler registry mainW conn = do
   queue <- liftIO . atomically $ newTBQueue 10
   liftIO $ concurrently_ (handleR queue) (handleS queue)
   where
@@ -160,7 +164,7 @@ connectionHandler registry initDom conn = do
     handleR queue = do
       liftIO $ WS.withPingThread conn 5 (pure ()) $ do
         putStrLn [i|New connection ...|]
-        dom <- atomically $ initDom registry
+        dom <- atomically $ widgetRenderInitial registry mainW
         WS.sendTextData conn $ renderBS $ div_ [id_ "init"] dom
         handleClient
       where
@@ -195,18 +199,18 @@ type API =
     :<|> Get '[HTML] (Html ())
     :<|> "ws" :> WebSocket
 
-appServer :: Text -> Registry -> DomInit -> Server API
-appServer title reg idom =
+appServer :: Text -> Registry -> Widget -> Server API
+appServer title reg mainW =
   xstaticServant (xStaticFiles <> [XStatic.tailwind])
     :<|> pure (bootHandler title)
-    :<|> connectionHandler reg idom
+    :<|> connectionHandler reg mainW
 
 -- | Create the web application
-app :: Text -> Registry -> DomInit -> Wai.Application
-app title reg idom = serve (Proxy @API) $ appServer title reg idom
+app :: Text -> Registry -> Widget -> Wai.Application
+app title reg mainW = serve (Proxy @API) $ appServer title reg mainW
 
 -- | Start the Warp WEB server to serve the application
-runServer :: Text -> [Widget] -> DomInit -> IO ()
-runServer title widgets idom = do
+runServer :: Text -> [Widget] -> Widget -> IO ()
+runServer title widgets mainW = do
   registry <- atomically $ initRegistry widgets
-  Warp.run 8092 $ app title registry idom
+  Warp.run 8092 $ app title registry mainW

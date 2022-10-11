@@ -8,18 +8,18 @@
 -- Add desc
 module Demo.Counter where
 
-import Control.Concurrent.STM
 import Control.Monad.State (MonadState (put), State, get)
 import qualified Data.Aeson as Aeson
+import Data.Set
 import Lucid (Html, ToHtml (toHtml))
 import Lucid.Html5
 import Takoyaki.Engine
-  ( Registry,
+  ( ChildsStore,
     WEvent (WEvent),
     WState,
     Widget (..),
     runServer,
-    widgetRender,
+    widgetRenderFromChildsStore,
     withEvent,
   )
 import Takoyaki.Htmx
@@ -28,8 +28,8 @@ import Takoyaki.Htmx
   )
 import Prelude
 
-counter :: Widget
-counter =
+counterW :: Widget
+counterW =
   Widget
     { wId = "Counter",
       wSwap = InnerHTML,
@@ -123,16 +123,25 @@ counterDisplayW =
       pure ()
     wTrigger = Nothing
 
-run :: IO ()
-run = runServer "Takoyaki Demo" widget initDom
+mainW :: Widget
+mainW =
+  Widget
+    { wId = "mainW",
+      wSwap = InnerHTML,
+      wsEvent = const Nothing,
+      wRender,
+      wState = Nothing,
+      wStateUpdate = const $ pure (),
+      wTrigger = Nothing,
+      wChilds = fromList [counterW, counterControlW, counterDisplayW]
+    }
   where
-    widget = [counter, counterControlW, counterDisplayW]
-    initDom :: Registry -> STM (Html ())
-    initDom _registry = do
-      let counter' = widgetRender mempty counter
-          counterCW = widgetRender mempty counterControlW
-          counterDW = widgetRender mempty counterDisplayW
-      pure $ div_ [id_ "my-dom"] $ do
+    wRender :: ChildsStore -> State (Maybe WState) (Html ())
+    wRender rs = pure $ do
+      let counter' = widgetRenderFromChildsStore "Counter" rs
+          counterCW = widgetRenderFromChildsStore "CounterControl" rs
+          counterDW = widgetRenderFromChildsStore "CounterDisplay" rs
+      div_ [id_ "my-dom"] $ do
         div_ $ do
           p_ "Counter"
           counter'
@@ -141,3 +150,8 @@ run = runServer "Takoyaki Demo" widget initDom
           span_ $ do
             counterDW
             counterCW
+
+run :: IO ()
+run = runServer "Takoyaki Counter Demo" widgets mainW
+  where
+    widgets = [mainW, counterW, counterControlW, counterDisplayW]

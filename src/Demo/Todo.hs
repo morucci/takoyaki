@@ -1,6 +1,5 @@
 module Demo.Todo where
 
-import Control.Concurrent.STM
 import Control.Monad.State
 import Data.Set (fromList)
 import Lucid (Html)
@@ -9,8 +8,8 @@ import Takoyaki.Engine
 import Takoyaki.Htmx
 import Prelude
 
-todoMainW :: Widget
-todoMainW =
+mainW :: Widget
+mainW =
   Widget
     { wId = "TodoMainW",
       wSwap = InnerHTML,
@@ -67,11 +66,6 @@ todoListW =
       div_ [class_ "bg-gray-300"] "Empty Todo"
 
 run :: IO ()
-run = runServer "Takoyaki Todo Demo" widget initDom
+run = runServer "Takoyaki Todo Demo" widgets mainW
   where
-    widget = [todoMainW, todoInputFormW, todoListW]
-    initDom :: Registry -> STM (Html ())
-    initDom registry = do
-      rs <- mkChildsStore registry (todoMainW.wChilds)
-      let todoMainW' = widgetRender rs todoMainW
-      pure $ div_ [id_ "my-dom"] $ todoMainW'
+    widgets = [mainW, todoInputFormW, todoListW]
