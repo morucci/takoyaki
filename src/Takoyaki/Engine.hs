@@ -1,4 +1,15 @@
-module Takoyaki.Engine where
+module Takoyaki.Engine
+  ( renderW,
+    Widget (..),
+    ChildsStore,
+    WState,
+    WEvent (..),
+    WSEvent (..),
+    withEvent,
+    mkWidget,
+    runServer,
+  )
+where
 
 import Control.Concurrent.Async (concurrently_)
 import Control.Concurrent.STM (STM, TVar, atomically, modifyTVar, newTBQueue, newTVar, readTBQueue, readTVar, writeTBQueue)
@@ -113,8 +124,8 @@ processEventWidget reg event w = do
   addWidget reg newWidget
   pure newWidget
 
-widgetRenderFromChildsStore :: WidgetId -> ChildsStore -> Html ()
-widgetRenderFromChildsStore w rs = case Map.lookup w rs of
+renderW :: ChildsStore -> WidgetId -> Html ()
+renderW cs w = case Map.lookup w cs of
   Just r -> r
   Nothing -> pure ()
 

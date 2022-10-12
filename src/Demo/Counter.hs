@@ -14,18 +14,6 @@ import Data.Set
 import Lucid (Html, ToHtml (toHtml))
 import Lucid.Html5
 import Takoyaki.Engine
-  ( ChildsStore,
-    WEvent (WEvent),
-    WState,
-    Widget (..),
-    mkWidget,
-    runServer,
-    widgetRenderFromChildsStore,
-    withEvent,
-  )
-import Takoyaki.Htmx
-  ( WSEvent (..),
-  )
 import Prelude
 
 counterW :: Widget
@@ -111,10 +99,10 @@ mainW =
     }
   where
     wRender :: ChildsStore -> State (Maybe WState) (Html ())
-    wRender rs = pure $ do
-      let counter' = widgetRenderFromChildsStore "Counter" rs
-          counterCW = widgetRenderFromChildsStore "CounterControl" rs
-          counterDW = widgetRenderFromChildsStore "CounterDisplay" rs
+    wRender cs = pure $ do
+      let counter' = renderW cs "Counter"
+          counterCW = renderW cs "CounterControl"
+          counterDW = renderW cs "CounterDisplay"
       div_ $ do
         p_ "Counter"
         counter'

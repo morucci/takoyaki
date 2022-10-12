@@ -15,11 +15,11 @@ mainW =
     }
   where
     wRender :: ChildsStore -> State (Maybe WState) (Html ())
-    wRender rs = pure $ do
+    wRender cs = pure $ do
       div_ [class_ "bg-gray-200"] $ do
         h1_ "Test"
-        widgetRenderFromChildsStore "TodoListW" rs
-        widgetRenderFromChildsStore "TodoInputFormW" rs
+        renderW cs "TodoListW"
+        renderW cs "TodoInputFormW"
 
 todoInputFormW :: Widget
 todoInputFormW =
