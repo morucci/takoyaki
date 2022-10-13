@@ -40,7 +40,8 @@ import Prelude
 
 data WEvent = WEvent
   { eTarget :: WidgetId,
-    eType :: Text
+    eType :: Text,
+    eValue :: Aeson.Value
   }
   deriving (Show)
 
@@ -189,7 +190,7 @@ connectionHandler registry mainW conn = do
             Just wsEvent -> do
               putStrLn $ "Received WS event: " <> show wsEvent
               atomically $ do
-                targetedWidgetM <- getWidget registry wsEvent.wseWidgetId
+                targetedWidgetM <- getWidget registry wsEvent.wseWId
                 mapM_ (writeTBQueue queue) $ case targetedWidgetM of
                   Just targetedWidget -> targetedWidget.wsEvent wsEvent
                   Nothing -> Nothing

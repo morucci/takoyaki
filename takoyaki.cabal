@@ -46,6 +46,7 @@ library
                     , string-interpolate
                     , aeson
                     , async
+                    , bytestring
                     , containers
                     , lens
                     , lens-aeson
@@ -55,6 +56,8 @@ library
                     , safe-exceptions
                     , stm
                     , http-api-data
+                    , unordered-containers
+                    , vector
                     , wai
                     , warp
                     , websockets

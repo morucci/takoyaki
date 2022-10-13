@@ -27,8 +27,8 @@ counterW =
   where
     wsEvent :: WSEvent -> Maybe WEvent
     wsEvent e
-      | e.wseTriggerId == "IncButton" = Just $ WEvent "Counter" "IncCounter"
-      | e.wseTriggerId == "DecrButton" = Just $ WEvent "Counter" "DecrCounter"
+      | e.wseTId == "IncButton" = Just $ WEvent "Counter" "IncCounter" Aeson.Null
+      | e.wseTId == "DecrButton" = Just $ WEvent "Counter" "DecrCounter" Aeson.Null
       | otherwise = Nothing
     wRender :: State (Maybe WState) (Html ())
     wRender = do
@@ -44,8 +44,8 @@ counterW =
     wStateUpdate e = do
       ws <- get
       case (ws, e) of
-        (Just (Aeson.Number i'), WEvent _ "IncCounter") -> put . Just $ Aeson.Number (i' + 1)
-        (Just (Aeson.Number i'), WEvent _ "DecrCounter") -> put . Just $ Aeson.Number (i' - 1)
+        (Just (Aeson.Number i'), WEvent _ "IncCounter" _) -> put . Just $ Aeson.Number (i' + 1)
+        (Just (Aeson.Number i'), WEvent _ "DecrCounter" _) -> put . Just $ Aeson.Number (i' - 1)
         _otherwise -> put ws
       pure ()
 
@@ -58,8 +58,8 @@ counterControlW =
   where
     wsEvent :: WSEvent -> Maybe WEvent
     wsEvent e
-      | e.wseTriggerId == "IncButton" = Just $ WEvent "CounterDisplay" "IncCounter"
-      | e.wseTriggerId == "DecrButton" = Just $ WEvent "CounterDisplay" "DecrCounter"
+      | e.wseTId == "IncButton" = Just $ WEvent "CounterDisplay" "IncCounter" Aeson.Null
+      | e.wseTId == "DecrButton" = Just $ WEvent "CounterDisplay" "DecrCounter" Aeson.Null
       | otherwise = Nothing
     wRender :: State (Maybe WState) (Html ())
     wRender = do
@@ -86,8 +86,8 @@ counterDisplayW =
     wStateUpdate e = do
       ws <- get
       case (ws, e) of
-        (Just (Aeson.Number i'), WEvent _ "IncCounter") -> put . Just $ Aeson.Number (i' + 1)
-        (Just (Aeson.Number i'), WEvent _ "DecrCounter") -> put . Just $ Aeson.Number (i' - 1)
+        (Just (Aeson.Number i'), WEvent _ "IncCounter" _) -> put . Just $ Aeson.Number (i' + 1)
+        (Just (Aeson.Number i'), WEvent _ "DecrCounter" _) -> put . Just $ Aeson.Number (i' - 1)
         _otherwise -> put ws
       pure ()
 
