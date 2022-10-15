@@ -16,14 +16,11 @@ import Control.Concurrent.STM (STM, TVar, atomically, modifyTVar, newTBQueue, ne
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (State, evalState, execState)
 import qualified Data.Aeson as Aeson
-import qualified Data.Aeson.KeyMap as Aeson
-import qualified Data.Aeson.Text as Aeson
 import qualified Data.Map as Map
 import Data.Maybe (catMaybes)
 import Data.Set as Set
 import Data.String.Interpolate (i)
 import Data.Text (Text)
-import Data.Text.Lazy (toStrict)
 import Lucid (Html, ToHtml (toHtml), renderBS, with)
 import Lucid.Html5
 import Lucid.XStatic (xstaticScripts)
@@ -135,13 +132,9 @@ widgetRender rs w = with elm [wIdVal, hxSwapOOB . swapToText $ wSwap w]
   where
     elm = case wTrigger w of
       Nothing -> with baseElm [id_ w.wId]
-      Just triggerM -> withEvent w.wId triggerM baseElm
+      Just triggerM -> withEvent w.wId triggerM [] baseElm
     baseElm = div_ $ evalState (w.wRender rs) w.wState
-    wIdVal =
-      hxVals
-        . toStrict
-        . Aeson.encodeToLazyText
-        $ Aeson.fromList [("widgetId", w.wId)]
+    wIdVal = mkHxVals [("widgetId", w.wId)]
 
 widgetRenderInitial :: Registry -> Widget -> STM (Html ())
 widgetRenderInitial reg widget = do
@@ -149,9 +142,9 @@ widgetRenderInitial reg widget = do
   pure $ div_ [id_ "init"] $ widgetRender rs widget
 
 -- If trigger not specified then the fallback is the natural event
-withEvent :: WidgetId -> Maybe Trigger -> Html () -> Html ()
-withEvent eid triggerM elm =
-  let elm' = with elm [id_ eid, wsSend ""]
+withEvent :: TriggerId -> Maybe Trigger -> [(Aeson.Key, Text)] -> Html () -> Html ()
+withEvent tId triggerM vals elm =
+  let elm' = with elm [id_ tId, mkHxVals vals, wsSend ""]
    in case triggerM of
         Just trigger -> with elm' [hxTrigger trigger]
         Nothing -> elm'

@@ -36,8 +36,8 @@ counterW =
       case ws of
         Just (Aeson.Number i') -> pure $ div_ $ do
           span_ $ do
-            withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
-            withEvent "DecrButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
+            withEvent "IncButton" Nothing [] $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
+            withEvent "DecrButton" Nothing [] $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
             span_ [class_ "mx-2"] $ toHtml $ show i'
         _otherwise -> error "Unexpected widget state"
     wStateUpdate :: WEvent -> State (Maybe WState) ()
@@ -65,8 +65,8 @@ counterControlW =
     wRender = do
       pure $ div_ $ do
         span_ $ do
-          withEvent "IncButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
-          withEvent "DecrButton" Nothing $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
+          withEvent "IncButton" Nothing [] $ button_ [class_ "bg-black text-white mx-2 px-2"] "Inc"
+          withEvent "DecrButton" Nothing [] $ button_ [class_ "bg-black text-white mx-2 px-2"] "Decr"
 
 counterDisplayW :: Widget
 counterDisplayW =

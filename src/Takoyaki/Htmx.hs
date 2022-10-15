@@ -1,13 +1,15 @@
 module Takoyaki.Htmx where
 
 import Data.Aeson as Aeson (FromJSON, Value (Object, String), decode, (.:))
-import Data.Aeson.Key as Aeson (toText)
-import Data.Aeson.KeyMap as Aeson (filterWithKey, map, toMapText)
+import Data.Aeson.Key as Aeson (Key, toText)
+import Data.Aeson.KeyMap as Aeson (filterWithKey, fromList, map, toMapText)
+import qualified Data.Aeson.Text as Aeson
 import Data.Aeson.Types (FromJSON (parseJSON))
 import Data.ByteString.Lazy (ByteString)
 import Data.Map
 import Data.String.Interpolate (i)
 import Data.Text
+import Data.Text.Lazy (toStrict)
 import Lucid (Attribute)
 import Lucid.Base (makeAttribute)
 import qualified Network.WebSockets as WS
@@ -82,3 +84,10 @@ instance FromJSON WSEvent where
         Just (Just tid) -> pure tid
         _ -> fail "Unable to extract HX-Trigger from HEADERS"
   parseJSON other = fail $ "Unable to parse WSEvent: " <> show other
+
+mkHxVals :: [(Key, Text)] -> Attribute
+mkHxVals vals =
+  hxVals
+    . toStrict
+    . Aeson.encodeToLazyText
+    $ Aeson.fromList vals

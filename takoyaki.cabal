@@ -55,8 +55,10 @@ library
                     , mtl
                     , safe-exceptions
                     , stm
+                    , hashable
                     , http-api-data
                     , unordered-containers
+                    , uuid
                     , vector
                     , wai
                     , warp
