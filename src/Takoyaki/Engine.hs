@@ -24,7 +24,6 @@ import Data.Text (Text)
 import Lucid (Html, ToHtml (toHtml), renderBS, with)
 import Lucid.Html5
 import Lucid.XStatic (xstaticScripts)
-import qualified Network.Wai as Wai
 import qualified Network.Wai.Handler.Warp as Warp
 import qualified Network.WebSockets as WS
 import Servant
@@ -149,12 +148,13 @@ withEvent tId triggerM vals elm =
         Just trigger -> with elm' [hxTrigger trigger]
         Nothing -> elm'
 
-connectionHandler :: Registry -> Widget -> WS.Connection -> Handler ()
-connectionHandler registry mainW conn = do
+connectionHandler :: [Widget] -> Widget -> WS.Connection -> Handler ()
+connectionHandler widgets mainW conn = do
+  registry <- liftIO $ atomically $ initRegistry widgets
   queue <- liftIO . atomically $ newTBQueue 10
-  liftIO $ concurrently_ (handleR queue) (handleS queue)
+  liftIO $ concurrently_ (handleR registry queue) (handleS registry queue)
   where
-    handleS queue = do
+    handleS registry queue = do
       widgetToRenderM <- atomically $ do
         event <- readTBQueue queue
         widgetM <- getWidget registry event.eTarget
@@ -165,8 +165,8 @@ connectionHandler registry mainW conn = do
           rs <- atomically $ mkChildsStore registry widgetToRender.wChilds
           WS.sendTextData conn $ renderBS $ widgetRender rs widgetToRender
         Nothing -> pure ()
-      handleS queue
-    handleR queue = do
+      handleS registry queue
+    handleR registry queue = do
       liftIO $ WS.withPingThread conn 5 (pure ()) $ do
         putStrLn [i|New connection ...|]
         dom <- atomically $ widgetRenderInitial registry mainW
@@ -204,18 +204,13 @@ type API =
     :<|> Get '[HTML] (Html ())
     :<|> "ws" :> WebSocket
 
-appServer :: Text -> Registry -> Widget -> Server API
-appServer title reg mainW =
+appServer :: Text -> [Widget] -> Widget -> Server API
+appServer title widgets mainW =
   xstaticServant (xStaticFiles <> [XStatic.tailwind])
     :<|> pure (bootHandler title)
-    :<|> connectionHandler reg mainW
+    :<|> connectionHandler widgets mainW
 
--- | Create the web application
-app :: Text -> Registry -> Widget -> Wai.Application
-app title reg mainW = serve (Proxy @API) $ appServer title reg mainW
-
--- | Start the Warp WEB server to serve the application
 runServer :: Text -> [Widget] -> Widget -> IO ()
-runServer title widgets mainW = do
-  registry <- atomically $ initRegistry widgets
-  Warp.run 8092 $ app title registry mainW
+runServer title widgets mainW = Warp.run 8092 $ app
+  where
+    app = serve (Proxy @API) $ appServer title widgets mainW
