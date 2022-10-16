@@ -1,3 +1,5 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
+
 module Demo.Todo where
 
 import Control.Monad.State
@@ -26,8 +28,8 @@ mainW =
     wRender cs = pure $ do
       div_ [class_ "bg-gray-200"] $ do
         h1_ "Takoyaki TODO list demo"
-        renderW cs "TodoListW"
         renderW cs "TodoInputFormW"
+        renderW cs "TodoListW"
 
 todoInputFormW :: Widget
 todoInputFormW =
@@ -36,23 +38,30 @@ todoInputFormW =
     wsEvent :: WSEvent -> Maybe (IO WEvent)
     wsEvent e
       | e.wseTId == "InputFormSubmitted" = do
-          case Map.lookup ("task-name") e.wseData of
-            Just (Just taskContent) -> Just $ genAddTaskEvent taskContent
+          case (Map.lookup ("task-name") e.wseData, Map.lookup ("task-prio") e.wseData) of
+            ((Just (Just taskContent)), (Just (Just taskPrio))) -> Just $ genAddTaskEvent taskContent taskPrio
             _ -> Nothing
       | otherwise = Nothing
       where
-        genAddTaskEvent :: Text -> IO (WEvent)
-        genAddTaskEvent taskContent = do
+        genAddTaskEvent :: Text -> Text -> IO (WEvent)
+        genAddTaskEvent taskContent taskPrio = do
           now <- getCurrentTime
-          let task = Task taskContent now
+          let task = Task taskContent now (from taskPrio)
           pure $ WEvent "TodoListW" "AddTask" (Aeson.toJSON task)
     wRender :: State (Maybe WState) (Html ())
     wRender = pure $ do
       div_ [class_ "bg-gray-100"] $ do
         withEvent "InputFormSubmitted" Nothing [] $ do
           form_ [name_ "todo-input"] $ do
-            label_ [for_ "task-name"] "Task name"
-            input_ [name_ "task-name", type_ "text"]
+            span_ [class_ "mr-2"] $ do
+              label_ [for_ "task-name", class_ "mr-1"] "Task"
+              input_ [name_ "task-name", type_ "text"]
+            span_ [class_ "mr-2"] $ do
+              label_ [for_ "todo-input-prio", class_ "mr-1"] "Task prio"
+              select_ [name_ "task-prio", id_ "todo-input-prio"] $ do
+                option_ [value_ "High"] "High"
+                option_ [value_ "Medium"] "Medium"
+                option_ [value_ "Low"] "Low"
             button_ [type_ "submit"] "Add task"
 
 todoListW :: Widget
@@ -107,13 +116,30 @@ todoListW =
           withEvent "DelTask" Nothing [("TaskId", taskId)] $ do
             button_ [class_ "mr-2 bg-red-600"] "Del"
             span_ [class_ "mr-2"] $ toHtml $ show task.taskDate
+            span_ [class_ "mr-2"] $ toHtml $ show task.taskPrio
             span_ [class_ "mr-2"] $ toHtml task.taskData
 
 type TodoTaskId = Text
 
+data TaskPrio = High | Medium | Low deriving (Show, Eq, Generic)
+
+instance FromJSON TaskPrio
+
+instance ToJSON TaskPrio
+
+instance Hashable TaskPrio
+
+instance From Text TaskPrio where
+  from txt = case txt of
+    "High" -> High
+    "Medium" -> Medium
+    "Low" -> Low
+    _otherwise -> Low
+
 data Task = Task
   { taskData :: Text,
-    taskDate :: UTCTime
+    taskDate :: UTCTime,
+    taskPrio :: TaskPrio
   }
   deriving (Show, Generic, Eq)
 
