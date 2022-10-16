@@ -25,10 +25,10 @@ counterW =
       wStateUpdate
     }
   where
-    wsEvent :: WSEvent -> Maybe WEvent
+    wsEvent :: WSEvent -> Maybe (IO WEvent)
     wsEvent e
-      | e.wseTId == "IncButton" = Just $ WEvent "Counter" "IncCounter" Aeson.Null
-      | e.wseTId == "DecrButton" = Just $ WEvent "Counter" "DecrCounter" Aeson.Null
+      | e.wseTId == "IncButton" = Just . pure $ WEvent "Counter" "IncCounter" Aeson.Null
+      | e.wseTId == "DecrButton" = Just . pure $ WEvent "Counter" "DecrCounter" Aeson.Null
       | otherwise = Nothing
     wRender :: State (Maybe WState) (Html ())
     wRender = do
@@ -56,11 +56,12 @@ counterControlW =
       wRender = const wRender
     }
   where
-    wsEvent :: WSEvent -> Maybe WEvent
+    wsEvent :: WSEvent -> Maybe (IO WEvent)
     wsEvent e
-      | e.wseTId == "IncButton" = Just $ WEvent "CounterDisplay" "IncCounter" Aeson.Null
-      | e.wseTId == "DecrButton" = Just $ WEvent "CounterDisplay" "DecrCounter" Aeson.Null
+      | e.wseTId == "IncButton" = Just . pure $ WEvent "CounterDisplay" "IncCounter" Aeson.Null
+      | e.wseTId == "DecrButton" = Just . pure $ WEvent "CounterDisplay" "DecrCounter" Aeson.Null
       | otherwise = Nothing
+
     wRender :: State (Maybe WState) (Html ())
     wRender = do
       pure $ div_ $ do

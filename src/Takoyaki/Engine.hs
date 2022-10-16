@@ -52,7 +52,7 @@ type ChildsStore = Map.Map WidgetId (Html ())
 data Widget = Widget
   { wId :: WidgetId,
     wSwap :: WSwapStrategy,
-    wsEvent :: WSEvent -> Maybe WEvent,
+    wsEvent :: WSEvent -> Maybe (IO WEvent),
     wRender :: ChildsStore -> State (Maybe WState) (Html ()),
     wState :: Maybe WState,
     wStateUpdate :: WEvent -> State (Maybe WState) (),
@@ -155,8 +155,9 @@ connectionHandler widgets mainW conn = do
   liftIO $ concurrently_ (handleR registry queue) (handleS registry queue)
   where
     handleS registry queue = do
+      io <- atomically $ readTBQueue queue
+      event <- io
       widgetToRenderM <- atomically $ do
-        event <- readTBQueue queue
         widgetM <- getWidget registry event.eTarget
         mapM (processEventWidget registry event) widgetM
       case widgetToRenderM of

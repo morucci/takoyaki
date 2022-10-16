@@ -63,6 +63,7 @@ library
                     , wai
                     , warp
                     , websockets
+                    , witch
                     , xstatic
                     , xstatic-htmx
                     , xstatic-tailwind

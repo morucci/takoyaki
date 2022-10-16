@@ -6,11 +6,12 @@ import qualified Data.Aeson as Aeson
 import Data.Hashable (Hashable (hash))
 import qualified Data.Map as Map
 import Data.Set (fromList)
-import Data.Text (Text, pack)
+import Data.Text (Text)
 import GHC.Generics (Generic)
 import Lucid (Html, ToHtml (toHtml))
 import Lucid.Html5
 import Takoyaki.Engine
+import Witch
 import Prelude
 
 mainW :: Widget
@@ -31,11 +32,11 @@ todoInputFormW :: Widget
 todoInputFormW =
   (mkWidget "TodoInputFormW") {wRender = const wRender, wsEvent}
   where
-    wsEvent :: WSEvent -> Maybe WEvent
+    wsEvent :: WSEvent -> Maybe (IO WEvent)
     wsEvent e
       | e.wseTId == "InputFormSubmitted" = do
           case Map.lookup ("task-name") e.wseData of
-            Just (Just task) -> Just $ WEvent "TodoListW" "AddTask" (Aeson.String task)
+            Just (Just task) -> Just . pure $ WEvent "TodoListW" "AddTask" (Aeson.String task)
             _ -> Nothing
       | otherwise = Nothing
     wRender :: State (Maybe WState) (Html ())
@@ -57,12 +58,12 @@ todoListW =
     }
   where
     wState = Just $ setTodoListAsJSON emptyTodoList
-    wsEvent :: WSEvent -> Maybe WEvent
+    wsEvent :: WSEvent -> Maybe (IO WEvent)
     wsEvent e
       | e.wseTId == "DelTask" = do
           case Map.lookup ("TaskId") e.wseData of
             Just (Just taskId) -> do
-              Just $ WEvent "TodoListW" "DelTask" (Aeson.String taskId)
+              Just . pure $ WEvent "TodoListW" "DelTask" (Aeson.String taskId)
             _ -> Nothing
       | otherwise = Nothing
     wStateUpdate :: WEvent -> State (Maybe WState) ()
@@ -132,7 +133,7 @@ emptyTodoList = TodoList mempty
 
 addTask :: TodoList -> Text -> TodoList
 addTask todo@(TodoList tasks) taskContent = do
-  let task = Task (pack . show $ hash todo) taskContent
+  let task = Task (from . show $ hash todo) taskContent
   TodoList $ tasks <> [task]
 
 delTask :: TodoList -> TodoTaskId -> TodoList
