@@ -7,6 +7,7 @@ import Data.Hashable (Hashable (hash))
 import qualified Data.Map as Map
 import Data.Set (fromList)
 import Data.Text (Text)
+import Data.Time (UTCTime, getCurrentTime)
 import GHC.Generics (Generic)
 import Lucid (Html, ToHtml (toHtml))
 import Lucid.Html5
@@ -36,9 +37,15 @@ todoInputFormW =
     wsEvent e
       | e.wseTId == "InputFormSubmitted" = do
           case Map.lookup ("task-name") e.wseData of
-            Just (Just task) -> Just . pure $ WEvent "TodoListW" "AddTask" (Aeson.String task)
+            Just (Just taskContent) -> Just $ genAddTaskEvent taskContent
             _ -> Nothing
       | otherwise = Nothing
+      where
+        genAddTaskEvent :: Text -> IO (WEvent)
+        genAddTaskEvent taskContent = do
+          now <- getCurrentTime
+          let task = Task taskContent now
+          pure $ WEvent "TodoListW" "AddTask" (Aeson.toJSON task)
     wRender :: State (Maybe WState) (Html ())
     wRender = pure $ do
       div_ [class_ "bg-gray-100"] $ do
@@ -57,7 +64,7 @@ todoListW =
       wsEvent
     }
   where
-    wState = Just $ setTodoListAsJSON emptyTodoList
+    wState = Just $ Aeson.toJSON emptyTodoList
     wsEvent :: WSEvent -> Maybe (IO WEvent)
     wsEvent e
       | e.wseTId == "DelTask" = do
@@ -72,10 +79,13 @@ todoListW =
       case join $ getTodoListFromJSON <$> ws of
         Just todoList -> do
           case e of
-            WEvent _ "AddTask" (Aeson.String taskContent) -> do
-              put . Just . setTodoListAsJSON $ addTask todoList taskContent
+            WEvent _ "AddTask" jsonTask -> do
+              let taskM = getTaskFromJSON jsonTask
+              case taskM of
+                Just task -> put . Just . Aeson.toJSON $ addTask todoList task
+                _ -> pure ()
             WEvent _ "DelTask" (Aeson.String taskId) ->
-              put $ Just $ setTodoListAsJSON $ delTask todoList taskId
+              put . Just . Aeson.toJSON $ delTask todoList taskId
             _ -> pure ()
         _otherwise -> pure ()
 
@@ -89,20 +99,21 @@ todoListW =
           | otherwise -> do
               pure $ div_ [class_ "bg-gray-300"] $ do
                 ul_ $ forM_ tasks $ do
-                  \t -> li_ $ renderTask t.taskId t.taskData
+                  \(tId, task) -> li_ $ renderTask tId task
         _otherwise -> error "Unexpected widget state"
       where
-        renderTask :: TodoTaskId -> Text -> Html ()
-        renderTask taskId taskData = span_ $ do
+        renderTask :: TodoTaskId -> Task -> Html ()
+        renderTask taskId task = span_ $ do
           withEvent "DelTask" Nothing [("TaskId", taskId)] $ do
             button_ [class_ "mr-2 bg-red-600"] "Del"
-            toHtml taskData
+            span_ [class_ "mr-2"] $ toHtml $ show task.taskDate
+            span_ [class_ "mr-2"] $ toHtml task.taskData
 
 type TodoTaskId = Text
 
 data Task = Task
-  { taskId :: TodoTaskId,
-    taskData :: Text
+  { taskData :: Text,
+    taskDate :: UTCTime
   }
   deriving (Show, Generic, Eq)
 
@@ -112,7 +123,7 @@ instance ToJSON Task
 
 instance Hashable Task
 
-data TodoList = TodoList [Task] deriving (Show, Generic, Eq)
+data TodoList = TodoList [(TodoTaskId, Task)] deriving (Show, Generic, Eq)
 
 instance FromJSON TodoList
 
@@ -120,24 +131,27 @@ instance ToJSON TodoList
 
 instance Hashable TodoList
 
-getTodoListFromJSON :: Aeson.Value -> Maybe TodoList
-getTodoListFromJSON v = case Aeson.fromJSON v of
-  Aeson.Success todo -> Just todo
+getFromJSON :: FromJSON a => Aeson.Value -> Maybe a
+getFromJSON jsonV = case Aeson.fromJSON jsonV of
+  Aeson.Success v -> Just v
   Aeson.Error _ -> Nothing
 
-setTodoListAsJSON :: TodoList -> Aeson.Value
-setTodoListAsJSON = Aeson.toJSON
+getTaskFromJSON :: Aeson.Value -> Maybe Task
+getTaskFromJSON = getFromJSON
+
+getTodoListFromJSON :: Aeson.Value -> Maybe TodoList
+getTodoListFromJSON = getFromJSON
 
 emptyTodoList :: TodoList
 emptyTodoList = TodoList mempty
 
-addTask :: TodoList -> Text -> TodoList
-addTask todo@(TodoList tasks) taskContent = do
-  let task = Task (from . show $ hash todo) taskContent
-  TodoList $ tasks <> [task]
+addTask :: TodoList -> Task -> TodoList
+addTask todo@(TodoList tasks) task = do
+  let taskId = (from . show $ hash todo)
+  TodoList $ tasks <> [(taskId, task)]
 
 delTask :: TodoList -> TodoTaskId -> TodoList
-delTask (TodoList tasks) taskId = TodoList $ filter (\t -> not $ t.taskId == taskId) tasks
+delTask (TodoList tasks) taskId = TodoList $ filter (\(tId, _) -> not $ tId == taskId) tasks
 
 run :: IO ()
 run = runServer "Takoyaki Todo Demo" widgets mainW
