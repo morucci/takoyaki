@@ -46,7 +46,7 @@ todoInputFormW =
         genAddTaskEvent :: Text -> Text -> IO (WEvent)
         genAddTaskEvent taskContent taskPrio = do
           now <- getCurrentTime
-          let task = Task taskContent now (from taskPrio)
+          let task = Task taskContent now (from taskPrio) False
           pure $ WEvent "TodoListW" "AddTask" (Aeson.toJSON task)
     wRender :: State (Maybe WState) (Html ())
     wRender = pure $ do
@@ -81,6 +81,11 @@ todoListW =
             Just (Just taskId) -> do
               Just . pure $ WEvent "TodoListW" "DelTask" (Aeson.String taskId)
             _ -> Nothing
+      | e.wseTId == "EditTask" = do
+          case Map.lookup ("TaskId") e.wseData of
+            Just (Just taskId) -> do
+              Just . pure $ WEvent "TodoListW" "EditTask" (Aeson.String taskId)
+            _ -> Nothing
       | otherwise = Nothing
     wStateUpdate :: WEvent -> State (Maybe WState) ()
     wStateUpdate e = do
@@ -93,6 +98,8 @@ todoListW =
               case taskM of
                 Just task -> put . Just . Aeson.toJSON $ addTask todoList task
                 _ -> pure ()
+            WEvent _ "EditTask" (Aeson.String taskId) -> do
+              put . Just . Aeson.toJSON $ setTaskEdit todoList taskId
             WEvent _ "DelTask" (Aeson.String taskId) ->
               put . Just . Aeson.toJSON $ delTask todoList taskId
             _ -> pure ()
@@ -115,9 +122,16 @@ todoListW =
         renderTask taskId task = span_ $ do
           withEvent "DelTask" Nothing [("TaskId", taskId)] $ do
             button_ [class_ "mr-2 bg-red-600"] "Del"
-            span_ [class_ "mr-2"] $ toHtml $ show task.taskDate
-            span_ [class_ "mr-2"] $ toHtml $ show task.taskPrio
-            span_ [class_ "mr-2"] $ toHtml task.taskData
+          editButton
+          span_ [class_ "mr-2"] $ toHtml $ show task.taskDate
+          span_ [class_ "mr-2"] $ toHtml $ show task.taskPrio
+          span_ [class_ "mr-2"] $ toHtml task.taskData
+          where
+            editButton = case task.taskEditStatus of
+              False -> withEvent "EditTask" Nothing [("TaskId", taskId)] $ do
+                button_ [class_ "mr-2 bg-yellow-600"] "Edit"
+              True -> withEvent "UpdateTask" Nothing [("TaskId", taskId)] $ do
+                button_ [class_ "mr-2 bg-green-600"] "Save Edit"
 
 type TodoTaskId = Text
 
@@ -139,7 +153,8 @@ instance From Text TaskPrio where
 data Task = Task
   { taskData :: Text,
     taskDate :: UTCTime,
-    taskPrio :: TaskPrio
+    taskPrio :: TaskPrio,
+    taskEditStatus :: Bool
   }
   deriving (Show, Generic, Eq)
 
@@ -178,6 +193,11 @@ addTask todo@(TodoList tasks) task = do
 
 delTask :: TodoList -> TodoTaskId -> TodoList
 delTask (TodoList tasks) taskId = TodoList $ filter (\(tId, _) -> not $ tId == taskId) tasks
+
+setTaskEdit :: TodoList -> TodoTaskId -> TodoList
+setTaskEdit (TodoList tasks) taskId = TodoList $ map setEdit tasks
+  where
+    setEdit (tId, task) = (tId, if tId == taskId then task {taskEditStatus = True} else task)
 
 run :: IO ()
 run = runServer "Takoyaki Todo Demo" widgets mainW
