@@ -6,7 +6,7 @@ module Demo.Todo where
 import Control.Monad.State
 import qualified Data.Map as Map
 import Data.Text (Text)
-import Data.Time (UTCTime, getCurrentTime)
+import Data.Time (UTCTime, defaultTimeLocale, formatTime, getCurrentTime, parseTimeOrError)
 import Lucid
 import System.Random
 import Takoyaki.Engine
@@ -59,7 +59,8 @@ todoApp =
   App
     { appName = "Takoyaki Todo",
       appWSEvent = todoWSEvent,
-      appState = TodoList [],
+      -- appState = TodoList [],
+      appState = initTodoState,
       appRender = renderApp,
       appHandleEvent = todoHandleEvent
     }
@@ -173,9 +174,9 @@ todoListH = do
           button_ [class_ "mr-2 bg-red-600"] "Del"
         withEvent "EditTask" Nothing [("TaskId", task.taskId)] $ do
           button_ [class_ "mr-2 bg-yellow-600"] "Edit"
-        span_ [class_ "mr-2"] $ toHtml $ show task.taskDate
-        span_ [class_ "mr-2"] $ toHtml $ show task.taskPrio
+        span_ [class_ "mr-2"] $ toHtml $ formatTime defaultTimeLocale "%F" task.taskDate
         span_ [class_ "mr-2"] $ toHtml task.taskData
+        span_ [class_ "mr-2"] $ toHtml $ show task.taskPrio
 
 addTask :: TodoList -> Task -> TodoList
 addTask (TodoList tasks) task = do
@@ -201,6 +202,11 @@ updateTask (TodoList tasks) taskId' TaskUpdate {..} = TodoList $ map update task
       if taskId == taskId'
         then Task taskId taskUpdateData taskDate taskUpdatePrio
         else task
+
+initTodoState :: TodoList
+initTodoState = TodoList $ [Task "1" "This is a demo task" date Medium]
+  where
+    date = parseTimeOrError False defaultTimeLocale "%F" "2022-10-19"
 
 run :: IO ()
 run = runServer todoApp
