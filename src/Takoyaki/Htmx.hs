@@ -1,4 +1,4 @@
-module Takoyaki.HtmxNG where
+module Takoyaki.Htmx where
 
 import Data.Aeson as Aeson (FromJSON, Result (Error, Success), Value (Object, String), decode, fromJSON, (.:))
 import Data.Aeson.Key as Aeson (Key, toText)

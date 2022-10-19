@@ -1,4 +1,4 @@
-module Takoyaki.EngineNG
+module Takoyaki.Engine
   ( App (..),
     runServer,
     WSEvent (..),
@@ -23,7 +23,7 @@ import Servant
 import Servant.API.WebSocket (WebSocket)
 import Servant.HTML.Lucid (HTML)
 import Servant.XStatic (xstaticServant)
-import Takoyaki.HtmxNG
+import Takoyaki.Htmx
 import qualified XStatic.Tailwind as XStatic
 import Prelude
 

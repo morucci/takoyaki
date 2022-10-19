@@ -14,7 +14,7 @@ firefox http://127.0.0.1:8092
 
 ```Shell
 nix develop
-ghcid -W -c 'cabal repl' -r="Demo.Counter.run"
+ghcid -W -c 'cabal repl' -r="Demo.Todo.run"
 firefox http://127.0.0.1:8092
 ```
 

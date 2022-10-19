@@ -1,7 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Demo.TodoNG where
+module Demo.Todo where
 
 import Control.Monad.State
 import qualified Data.Map as Map
@@ -9,7 +9,7 @@ import Data.Text (Text)
 import Data.Time (UTCTime, getCurrentTime)
 import Lucid
 import System.Random
-import Takoyaki.EngineNG
+import Takoyaki.Engine
 import Witch
 import Prelude
 

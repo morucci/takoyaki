@@ -32,9 +32,9 @@ common common-options
 
 library
     import:           common-options
-    exposed-modules:  Takoyaki.HtmxNG
-                    , Takoyaki.EngineNG
-                    , Demo.TodoNG
+    exposed-modules:  Takoyaki.Htmx
+                    , Takoyaki.Engine
+                    , Demo.Todo
     build-depends:    servant
                     , servant-lucid
                     , servant-server
