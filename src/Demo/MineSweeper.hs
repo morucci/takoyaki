@@ -127,6 +127,11 @@ isHiddenCell cellCoord board = case getCell cellCoord board of
   Just (MSCell _ Hidden) -> True
   _ -> False
 
+isMineCell :: MSCellCoord -> MSBoard -> Bool
+isMineCell cellCoord board = case getCell cellCoord board of
+  Just (MSCell Mine _) -> True
+  _ -> False
+
 openAdjBlank0Cells :: MSCellCoord -> MSBoard -> MSBoard
 openAdjBlank0Cells cellCoord board =
   if isBlank0Cell cellCoord board
@@ -180,10 +185,15 @@ handleEvent ev = do
   appState <- get
   case ev of
     OpenCell cellCoord -> do
-      let gs1 = openCell cellCoord appState.board
-          gs2 = openAdjBlank0Cells cellCoord gs1
-      put $ MSState gs2 Play
-      renderBoard
+      if isMineCell cellCoord appState.board
+        then do
+          put $ MSState (openCell cellCoord appState.board) Gameover
+          renderApp
+        else do
+          let gs1 = openCell cellCoord appState.board
+              gs2 = openAdjBlank0Cells cellCoord gs1
+          put $ MSState gs2 Play
+          renderBoard
     NewGame newBoard -> do
       put $ MSState newBoard Play
       renderApp
@@ -197,22 +207,24 @@ renderApp = do
 
 renderPanel :: State MSState (Html ())
 renderPanel = do
-  _appState <- get
-  pure $ div_ [class_ "bg-gray-200 m-1 flex justify-between"] $ do
+  appState <- get
+  pure $ div_ [id_ "MSPanel", class_ "bg-gray-200 m-1 flex justify-between"] $ do
     div_ [class_ "w-10"] "9 💣"
-    withEvent' "play" [] $ div_ [class_ "bg-gray-300 border-2"] "🙂"
+    withEvent' "play" [] $ div_ [class_ "bg-gray-300 border-2"] $ case appState.state of
+      Play -> "🙂"
+      Gameover -> "☹"
     div_ [class_ "w-10 text-right"] "0"
 
 renderBoard :: State MSState (Html ())
 renderBoard = do
   appState <- get
   pure $ div_ [id_ "MSBoard", class_ "grid grid-cols-10 gap-1"] $ do
-    mapM_ renderCell $ Map.toList appState.board
+    mapM_ (renderCell appState.state) $ Map.toList appState.board
   where
-    renderCell :: (MSCellCoord, MSCell) -> Html ()
-    renderCell (cellCoords, cellState) =
+    renderCell :: MSGameState -> (MSCellCoord, MSCell) -> Html ()
+    renderCell gameState (cellCoords, cellState) =
       let cellId = mkHxVals [("cx", pack $ show $ cellCoords.cx), ("cy", pack $ show $ cellCoords.cy)]
-       in withEvent' "showCell" [cellId] $
+       in installCellEvent gameState cellId $
             div_ [class_ "bg-gray-300 text-center"] $
               case cellState of
                 MSCell (Blank v) Open
@@ -231,6 +243,10 @@ renderBoard = do
       where
         showCellValue :: Int -> Html ()
         showCellValue = toHtml . show
+        installCellEvent :: MSGameState -> Attribute -> Html () -> Html ()
+        installCellEvent gs cellId elm = case gs of
+          Gameover -> elm
+          Play -> withEvent' "showCell" [cellId] elm
 
 run :: IO ()
 run = do

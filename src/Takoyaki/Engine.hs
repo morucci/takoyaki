@@ -33,6 +33,7 @@ data App s ev = App
     appWSEvent :: WSEvent -> Maybe ([IO ev]),
     appState :: s,
     appRender :: State s (Html ()),
+    -- TODO: change to: ev -> State s [Html ()]
     appHandleEvent :: ev -> State s (Html ())
   }
 
@@ -89,6 +90,7 @@ withEvent tId triggerM vals elm =
         Just trigger -> with elm' [hxTrigger trigger]
         Nothing -> elm'
 
+-- TODO: replace withEvent with this one
 withEvent' :: TriggerId -> [Attribute] -> Html () -> Html ()
 withEvent' tId tAttrs elm = with elm ([id_ tId, wsSend ""] <> tAttrs)
 
