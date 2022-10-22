@@ -111,23 +111,23 @@ todoHandleEvent ev = do
       todoListH
     EditTask taskId -> do
       case getTask appState taskId of
-        Just task -> editTaskFormH task
+        Just task -> pure $ editTaskFormH task
         Nothing -> pure $ pure ()
     UpdateTask taskId taskUpdate -> do
       put $ updateTask appState taskId taskUpdate
       todoListH
-    RenderAddTask -> addTaskFormH
+    RenderAddTask -> pure addTaskFormH
 
 renderApp :: State TodoList (Html ())
 renderApp = do
   appState <- get
   pure $ div_ [class_ "bg-gray-200"] $ do
     h1_ "Takoyaki TODO list demo"
-    evalState addTaskFormH appState
+    addTaskFormH
     evalState todoListH appState
 
-addTaskFormH :: State TodoList (Html ())
-addTaskFormH = pure $ do
+addTaskFormH :: Html ()
+addTaskFormH =
   div_ [id_ "todo-control", class_ "bg-gray-100"] $ do
     withEvent "AddTask" [] $ do
       form_ $ do
@@ -137,8 +137,8 @@ addTaskFormH = pure $ do
         span_ [class_ "mr-2"] $ prioSelectH Nothing
         button_ [type_ "submit"] "Add task"
 
-editTaskFormH :: Task -> State TodoList (Html ())
-editTaskFormH task = pure $ do
+editTaskFormH :: Task -> Html ()
+editTaskFormH task =
   div_ [id_ "todo-control", class_ "bg-gray-100"] $ do
     withEvent "UpdateTask" [mkHxVals [("taskId", task.taskId)]] $ do
       form_ $ do
@@ -164,9 +164,7 @@ prioSelectH selectedItem = do
 todoListH :: State TodoList (Html ())
 todoListH = do
   appState <- get
-  pure $
-    div_ [id_ "todoList"] $
-      mapM_ renderTask (getTasks appState)
+  pure $ div_ [id_ "todoList"] $ mapM_ renderTask (getTasks appState)
   where
     renderTask :: Task -> Html ()
     renderTask task = do
