@@ -99,24 +99,27 @@ todoWSEvent (WSEvent wseName _ wseData) = case wseName of
         getRandom :: IO Int
         getRandom = randomIO
 
-todoHandleEvent :: TodoAPPEvent -> State TodoList (Html ())
+todoHandleEvent :: TodoAPPEvent -> State TodoList [Html ()]
 todoHandleEvent ev = do
   appState <- get
   case ev of
     AddTask task -> do
       put $ addTask appState task
-      todoListH
+      nS <- get
+      pure [evalState todoListH nS]
     DelTask taskId -> do
       put $ delTask appState taskId
-      todoListH
+      nS <- get
+      pure [evalState todoListH nS]
     EditTask taskId -> do
       case getTask appState taskId of
-        Just task -> pure $ editTaskFormH task
-        Nothing -> pure $ pure ()
+        Just task -> pure [editTaskFormH task]
+        Nothing -> pure []
     UpdateTask taskId taskUpdate -> do
       put $ updateTask appState taskId taskUpdate
-      todoListH
-    RenderAddTask -> pure addTaskFormH
+      nS <- get
+      pure [evalState todoListH nS]
+    RenderAddTask -> pure [addTaskFormH]
 
 renderApp :: State TodoList (Html ())
 renderApp = do

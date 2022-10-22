@@ -31,8 +31,7 @@ data App s ev = App
     appWSEvent :: WSEvent -> Maybe ([IO ev]),
     appState :: s,
     appRender :: State s (Html ()),
-    -- TODO: change to: ev -> State s [Html ()]
-    appHandleEvent :: ev -> State s (Html ())
+    appHandleEvent :: ev -> State s [Html ()]
   }
 
 type AppQ ev = TBQueue ([IO ev])
@@ -58,8 +57,8 @@ connectionHandler app conn = do
         handleEV as eio = do
           event <- eio
           putStrLn $ "Handling event: " <> show event
-          let (fragment, newState) = runState (app.appHandleEvent event) as
-          WS.sendTextData conn . renderBS $ fragment
+          let (fragments, newState) = runState (app.appHandleEvent event) as
+          mapM_ (WS.sendTextData conn . renderBS) fragments
           pure newState
 
     handleR queue = do

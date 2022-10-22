@@ -186,7 +186,7 @@ wSEvent (WSEvent wseName _ wseData) = case wseName of
       newBoard <- initBoard
       pure $ NewGame newBoard
 
-handleEvent :: MSEvent -> State MSState (Html ())
+handleEvent :: MSEvent -> State MSState [Html ()]
 handleEvent ev = do
   appState <- get
   case ev of
@@ -194,16 +194,19 @@ handleEvent ev = do
       if isMineCell cellCoord appState.board
         then do
           put $ MSState (openCell cellCoord appState.board) Gameover
-          renderApp
+          nS <- get
+          pure [evalState renderApp nS]
         else do
           let gs1 = openCell cellCoord appState.board
               gs2 = openAdjBlank0Cells cellCoord gs1
               gameState = if countHiddenBlank gs2 == 0 then Win else Play
           put $ MSState gs2 $ gameState
-          renderApp
+          nS <- get
+          pure $ [evalState renderApp nS]
     NewGame newBoard -> do
       put $ MSState newBoard Play
-      renderApp
+      nS <- get
+      pure $ [evalState renderApp nS]
 
 renderApp :: State MSState (Html ())
 renderApp = do
