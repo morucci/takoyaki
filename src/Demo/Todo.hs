@@ -10,6 +10,7 @@ import Data.Time (UTCTime, defaultTimeLocale, formatTime, getCurrentTime, parseT
 import Lucid
 import System.Random
 import Takoyaki.Engine
+import Takoyaki.Htmx (mkHxVals)
 import Witch
 import Prelude
 
@@ -128,7 +129,7 @@ renderApp = do
 addTaskFormH :: State TodoList (Html ())
 addTaskFormH = pure $ do
   div_ [id_ "todo-control", class_ "bg-gray-100"] $ do
-    withEvent "AddTask" Nothing [] $ do
+    withEvent "AddTask" [] $ do
       form_ $ do
         span_ [class_ "mr-2"] $ do
           label_ [for_ "task-name", class_ "mr-1"] "Task"
@@ -139,7 +140,7 @@ addTaskFormH = pure $ do
 editTaskFormH :: Task -> State TodoList (Html ())
 editTaskFormH task = pure $ do
   div_ [id_ "todo-control", class_ "bg-gray-100"] $ do
-    withEvent "UpdateTask" Nothing [("taskId", task.taskId)] $ do
+    withEvent "UpdateTask" [mkHxVals [("taskId", task.taskId)]] $ do
       form_ $ do
         span_ [class_ "mr-2"] $ do
           label_ [for_ "task-name", class_ "mr-1"] "Task"
@@ -169,10 +170,11 @@ todoListH = do
   where
     renderTask :: Task -> Html ()
     renderTask task = do
+      let taskId = mkHxVals [("TaskId", task.taskId)]
       div_ $ span_ $ do
-        withEvent "DelTask" Nothing [("TaskId", task.taskId)] $ do
+        withEvent "DelTask" [taskId] $ do
           button_ [class_ "mr-2 bg-red-600"] "Del"
-        withEvent "EditTask" Nothing [("TaskId", task.taskId)] $ do
+        withEvent "EditTask" [taskId] $ do
           button_ [class_ "mr-2 bg-yellow-600"] "Edit"
         span_ [class_ "mr-2"] $ toHtml $ formatTime defaultTimeLocale "%F" task.taskDate
         span_ [class_ "mr-2"] $ toHtml task.taskData

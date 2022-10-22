@@ -217,7 +217,7 @@ renderPanel = do
   appState <- get
   pure $ div_ [id_ "MSPanel", class_ "bg-gray-200 m-1 flex justify-between"] $ do
     div_ [class_ "w-10"] "9 💣"
-    withEvent' "play" [] $ div_ [class_ "bg-gray-300 border-2 cursor-pointer"] $ case appState.state of
+    withEvent "play" [] $ div_ [class_ "bg-gray-300 border-2 cursor-pointer"] $ case appState.state of
       Play -> "🙂"
       Gameover -> "😖"
       Win -> "😎"
@@ -253,7 +253,7 @@ renderBoard = do
         showCellValue = toHtml . show
         installCellEvent :: MSGameState -> Attribute -> Html () -> Html ()
         installCellEvent gs cellId elm = case gs of
-          Play -> withEvent' "showCell" [cellId] elm
+          Play -> withEvent "showCell" [cellId] elm
           _ -> elm
 
 run :: IO ()

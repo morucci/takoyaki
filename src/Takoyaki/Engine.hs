@@ -3,7 +3,6 @@ module Takoyaki.Engine
     runServer,
     WSEvent (..),
     withEvent,
-    withEvent',
     getFromJSON,
   )
 where
@@ -12,7 +11,6 @@ import Control.Concurrent.Async (concurrently_)
 import Control.Concurrent.STM (STM, TBQueue, atomically, newTBQueue, readTBQueue, writeTBQueue)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State (State, evalState, runState)
-import qualified Data.Aeson.Key as Aeson
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Lucid (Attribute, Html, ToHtml (toHtml), With (with), renderBS)
@@ -83,16 +81,15 @@ connectionHandler app conn = do
               atomically $ do
                 mapM_ (writeTBQueue queue) $ app.appWSEvent wsEvent
 
-withEvent :: TriggerId -> Maybe Trigger -> [(Aeson.Key, Text)] -> Html () -> Html ()
-withEvent tId triggerM vals elm =
-  let elm' = with elm [id_ tId, mkHxVals vals, wsSend ""]
-   in case triggerM of
-        Just trigger -> with elm' [hxTrigger trigger]
-        Nothing -> elm'
+-- withEvent :: TriggerId -> Maybe Trigger -> [(Aeson.Key, Text)] -> Html () -> Html ()
+-- withEvent tId triggerM vals elm =
+--   let elm' = with elm [id_ tId, mkHxVals vals, wsSend ""]
+--    in case triggerM of
+--         Just trigger -> with elm' [hxTrigger trigger]
+--         Nothing -> elm'
 
--- TODO: replace withEvent with this one
-withEvent' :: TriggerId -> [Attribute] -> Html () -> Html ()
-withEvent' tId tAttrs elm = with elm ([id_ tId, wsSend ""] <> tAttrs)
+withEvent :: TriggerId -> [Attribute] -> Html () -> Html ()
+withEvent tId tAttrs elm = with elm ([id_ tId, wsSend ""] <> tAttrs)
 
 bootHandler :: Text -> Html ()
 bootHandler title = do
