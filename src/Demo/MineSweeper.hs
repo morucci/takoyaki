@@ -21,7 +21,7 @@ data MSState = MSState
   }
   deriving (Show)
 
-data MSGameState = Play | Gameover deriving (Show)
+data MSGameState = Play | Win | Gameover deriving (Show)
 
 data MSCellContent
   = Mine
@@ -132,6 +132,12 @@ isMineCell cellCoord board = case getCell cellCoord board of
   Just (MSCell Mine _) -> True
   _ -> False
 
+countHiddenBlank :: MSBoard -> Int
+countHiddenBlank board = length (filter keepHiddenBlank (Map.elems board))
+  where
+    keepHiddenBlank (MSCell (Blank _) Hidden) = True
+    keepHiddenBlank _ = False
+
 openAdjBlank0Cells :: MSCellCoord -> MSBoard -> MSBoard
 openAdjBlank0Cells cellCoord board =
   if isBlank0Cell cellCoord board
@@ -192,8 +198,9 @@ handleEvent ev = do
         else do
           let gs1 = openCell cellCoord appState.board
               gs2 = openAdjBlank0Cells cellCoord gs1
-          put $ MSState gs2 Play
-          renderBoard
+              gameState = if countHiddenBlank gs2 == 0 then Win else Play
+          put $ MSState gs2 $ gameState
+          renderApp
     NewGame newBoard -> do
       put $ MSState newBoard Play
       renderApp
@@ -213,6 +220,7 @@ renderPanel = do
     withEvent' "play" [] $ div_ [class_ "bg-gray-300 border-2"] $ case appState.state of
       Play -> "🙂"
       Gameover -> "☹"
+      Win -> "😎"
     div_ [class_ "w-10 text-right"] "0"
 
 renderBoard :: State MSState (Html ())
@@ -245,8 +253,8 @@ renderBoard = do
         showCellValue = toHtml . show
         installCellEvent :: MSGameState -> Attribute -> Html () -> Html ()
         installCellEvent gs cellId elm = case gs of
-          Gameover -> elm
           Play -> withEvent' "showCell" [cellId] elm
+          _ -> elm
 
 run :: IO ()
 run = do
