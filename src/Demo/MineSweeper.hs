@@ -217,9 +217,9 @@ renderPanel = do
   appState <- get
   pure $ div_ [id_ "MSPanel", class_ "bg-gray-200 m-1 flex justify-between"] $ do
     div_ [class_ "w-10"] "9 💣"
-    withEvent' "play" [] $ div_ [class_ "bg-gray-300 border-2"] $ case appState.state of
+    withEvent' "play" [] $ div_ [class_ "bg-gray-300 border-2 cursor-pointer"] $ case appState.state of
       Play -> "🙂"
-      Gameover -> "☹"
+      Gameover -> "😖"
       Win -> "😎"
     div_ [class_ "w-10 text-right"] "0"
 
@@ -233,7 +233,7 @@ renderBoard = do
     renderCell gameState (cellCoords, cellState) =
       let cellId = mkHxVals [("cx", pack $ show $ cellCoords.cx), ("cy", pack $ show $ cellCoords.cy)]
        in installCellEvent gameState cellId $
-            div_ [class_ "bg-gray-300 text-center"] $
+            div_ [class_ "bg-gray-300 text-center cursor-pointer"] $
               case cellState of
                 MSCell (Blank v) Open
                   | v == 0 -> div_ [class_ "bg-gray-200 h-6 w-full "] $ ""
