@@ -3,6 +3,7 @@
 
 module Demo.Todo where
 
+import Control.Concurrent.STM (STM, TVar, newTVarIO, readTVar, writeTVar)
 import Control.Monad.State
 import qualified Data.Map as Map
 import Data.Text (Text)
@@ -55,13 +56,14 @@ instance From TaskPrio Text where
     Medium -> "Medium"
     Low -> "Low"
 
-todoApp :: App TodoList TodoAPPEvent
-todoApp =
+data Service
+
+todoApp :: TVar TodoList -> App TodoList TodoAPPEvent
+todoApp appState =
   App
     { appName = "Takoyaki Todo",
       appWSEvent = todoWSEvent,
-      -- appState = TodoList [],
-      appState = initTodoState,
+      appState,
       appRender = renderApp,
       appHandleEvent = todoHandleEvent
     }
@@ -99,35 +101,35 @@ todoWSEvent (WSEvent wseName _ wseData) = case wseName of
         getRandom :: IO Int
         getRandom = randomIO
 
-todoHandleEvent :: TodoAPPEvent -> State TodoList [Html ()]
-todoHandleEvent ev = do
-  appState <- get
+todoHandleEvent :: TodoAPPEvent -> TVar TodoList -> STM [Html ()]
+todoHandleEvent ev appStateV = do
+  appState <- readTVar appStateV
   case ev of
     AddTask task -> do
-      put $ addTask appState task
-      nS <- get
-      pure [evalState todoListH nS]
+      writeTVar appStateV $ addTask appState task
+      todoListR <- todoListH appStateV
+      pure [todoListR]
     DelTask taskId -> do
-      put $ delTask appState taskId
-      nS <- get
-      pure [evalState todoListH nS]
+      writeTVar appStateV $ delTask appState taskId
+      todoListR <- todoListH appStateV
+      pure [todoListR]
     EditTask taskId -> do
       case getTask appState taskId of
         Just task -> pure [editTaskFormH task]
         Nothing -> pure []
     UpdateTask taskId taskUpdate -> do
-      put $ updateTask appState taskId taskUpdate
-      nS <- get
-      pure [evalState todoListH nS]
+      writeTVar appStateV $ updateTask appState taskId taskUpdate
+      todoListR <- todoListH appStateV
+      pure [todoListR]
     RenderAddTask -> pure [addTaskFormH]
 
-renderApp :: State TodoList (Html ())
-renderApp = do
-  appState <- get
+renderApp :: TVar TodoList -> STM (Html ())
+renderApp appStateV = do
+  todoListR <- todoListH appStateV
   pure $ div_ [class_ "bg-gray-200"] $ do
     h1_ "Takoyaki TODO list demo"
     addTaskFormH
-    evalState todoListH appState
+    todoListR
 
 addTaskFormH :: Html ()
 addTaskFormH =
@@ -164,9 +166,9 @@ prioSelectH selectedItem = do
       | Just item == selectedItem = [value_ item, selected_ ""]
       | otherwise = [value_ item]
 
-todoListH :: State TodoList (Html ())
-todoListH = do
-  appState <- get
+todoListH :: TVar TodoList -> STM (Html ())
+todoListH appStateV = do
+  appState <- readTVar appStateV
   pure $ div_ [id_ "todoList"] $ mapM_ renderTask (getTasks appState)
   where
     renderTask :: Task -> Html ()
@@ -212,4 +214,6 @@ initTodoState = TodoList $ [Task "1" "This is a demo task" date Medium]
     date = parseTimeOrError False defaultTimeLocale "%F" "2022-10-19"
 
 run :: IO ()
-run = runServer todoApp
+run = do
+  appState <- newTVarIO initTodoState
+  runServer $ todoApp appState

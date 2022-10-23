@@ -3,6 +3,7 @@
 
 module Demo.MineSweeper where
 
+import Control.Concurrent.STM (STM, TVar, newTVarIO, readTVar, writeTVar)
 import Control.Monad.State
 import qualified Data.Map as Map
 import Data.Text (pack)
@@ -154,14 +155,17 @@ openAdjBlank0Cells cellCoord board =
         then let nb = openCell coord b in openAdjBlank0Cells coord nb
         else b
 
+data Service
+
 mineSweeperApp :: IO (App MSState MSEvent)
 mineSweeperApp = do
   board <- initBoard
+  appState <- newTVarIO $ MSState board Play
   pure $
     App
       { appName = "MineSweeper",
         appWSEvent = wSEvent,
-        appState = MSState board Play,
+        appState,
         appRender = renderApp,
         appHandleEvent = handleEvent
       }
@@ -186,31 +190,31 @@ wSEvent (WSEvent wseName _ wseData) = case wseName of
       newBoard <- initBoard
       pure $ NewGame newBoard
 
-handleEvent :: MSEvent -> State MSState [Html ()]
-handleEvent ev = do
-  appState <- get
+handleEvent :: MSEvent -> TVar MSState -> STM [Html ()]
+handleEvent ev appStateV = do
+  appState <- readTVar appStateV
   case ev of
     OpenCell cellCoord -> do
       if isMineCell cellCoord appState.board
         then do
-          put $ MSState (openCell cellCoord appState.board) Gameover
-          nS <- get
-          pure [evalState renderApp nS]
+          writeTVar appStateV $ MSState (openCell cellCoord appState.board) Gameover
+          renderAppR <- renderApp appStateV
+          pure [renderAppR]
         else do
           let gs1 = openCell cellCoord appState.board
               gs2 = openAdjBlank0Cells cellCoord gs1
               gameState = if countHiddenBlank gs2 == 0 then Win else Play
-          put $ MSState gs2 $ gameState
-          nS <- get
-          pure $ [evalState renderApp nS]
+          writeTVar appStateV $ MSState gs2 $ gameState
+          renderAppR <- renderApp appStateV
+          pure [renderAppR]
     NewGame newBoard -> do
-      put $ MSState newBoard Play
-      nS <- get
-      pure $ [evalState renderApp nS]
+      writeTVar appStateV $ MSState newBoard Play
+      renderAppR <- renderApp appStateV
+      pure [renderAppR]
 
-renderApp :: State MSState (Html ())
-renderApp = do
-  appState <- get
+renderApp :: TVar MSState -> STM (Html ())
+renderApp appStateV = do
+  appState <- readTVar appStateV
   pure $ div_ [id_ "MSMain", class_ "w-60 border-2 border-gray-400 bg-gray-100"] $ do
     evalState renderPanel appState
     evalState renderBoard appState

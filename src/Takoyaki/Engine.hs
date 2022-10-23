@@ -7,10 +7,10 @@ module Takoyaki.Engine
   )
 where
 
-import Control.Concurrent.Async (concurrently_)
-import Control.Concurrent.STM (STM, TBQueue, atomically, newTBQueue, readTBQueue, writeTBQueue)
+import Control.Concurrent.Async
+import Control.Concurrent.STM (STM, TBQueue, TVar, atomically, newTBQueue, readTBQueue, writeTBQueue)
+import Control.Monad (void)
 import Control.Monad.IO.Class (liftIO)
-import Control.Monad.State (State, evalState, runState)
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Lucid (Attribute, Html, ToHtml (toHtml), With (with), renderBS)
@@ -29,42 +29,44 @@ import Prelude
 data App s ev = App
   { appName :: Text,
     appWSEvent :: WSEvent -> Maybe ([IO ev]),
-    appState :: s,
-    appRender :: State s (Html ()),
-    appHandleEvent :: ev -> State s [Html ()]
+    appState :: TVar s,
+    appRender :: TVar s -> STM (Html ()),
+    appHandleEvent :: ev -> TVar s -> STM [Html ()]
   }
 
 type AppQ ev = TBQueue ([IO ev])
 
+type ServiceQ sev = TBQueue sev
+
 connectionHandler :: Show ev => App s ev -> WS.Connection -> Handler ()
 connectionHandler app conn = do
-  queue <- liftIO . atomically $ initQ
-  liftIO $ concurrently_ (handleR queue) (handleS queue app.appState)
+  appQ <- liftIO . atomically $ initAppQ
+  _serviceQ <- liftIO . atomically $ initServiceQ
+  void . liftIO . runConcurrently $
+    (,)
+      <$> Concurrently (handleR appQ)
+      <*> Concurrently (handleS appQ)
   where
-    initQ :: STM (AppQ ev)
-    initQ = newTBQueue 10
-    handleS queue appState = do
-      evIOs <- atomically $ readTBQueue queue
-      newState <- handleEVs appState evIOs
-      handleS queue newState
+    initAppQ :: STM (AppQ ev)
+    initAppQ = newTBQueue 10
+    initServiceQ :: STM (ServiceQ sev)
+    initServiceQ = newTBQueue 10
+
+    handleS appQ = do
+      evIOs <- atomically $ readTBQueue appQ
+      mapM_ handleEV evIOs
+      handleS appQ
       where
-        handleEVs as eios = case eios of
-          [] -> pure as
-          [x] -> handleEV as x
-          (x : xs) -> do
-            ns <- handleEV as x
-            handleEVs ns xs
-        handleEV as eio = do
+        handleEV eio = do
           event <- eio
           putStrLn $ "Handling event: " <> show event
-          let (fragments, newState) = runState (app.appHandleEvent event) as
+          fragments <- atomically $ app.appHandleEvent event app.appState
           mapM_ (WS.sendTextData conn . renderBS) fragments
-          pure newState
 
-    handleR queue = do
+    handleR appQ = do
       liftIO $ WS.withPingThread conn 5 (pure ()) $ do
         putStrLn [i|New connection ...|]
-        let appDom = evalState app.appRender app.appState
+        appDom <- atomically $ app.appRender app.appState
         WS.sendTextData conn . renderBS . div_ [id_ "init"] $ appDom
         handleClient
       where
@@ -77,15 +79,7 @@ connectionHandler app conn = do
             Nothing -> pure ()
             Just wsEvent -> do
               putStrLn $ "Received WS event: " <> show wsEvent
-              atomically $ do
-                mapM_ (writeTBQueue queue) $ app.appWSEvent wsEvent
-
--- withEvent :: TriggerId -> Maybe Trigger -> [(Aeson.Key, Text)] -> Html () -> Html ()
--- withEvent tId triggerM vals elm =
---   let elm' = with elm [id_ tId, mkHxVals vals, wsSend ""]
---    in case triggerM of
---         Just trigger -> with elm' [hxTrigger trigger]
---         Nothing -> elm'
+              atomically $ mapM_ (writeTBQueue appQ) $ app.appWSEvent wsEvent
 
 withEvent :: TriggerId -> [Attribute] -> Html () -> Html ()
 withEvent tId tAttrs elm = with elm ([id_ tId, wsSend ""] <> tAttrs)

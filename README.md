@@ -15,6 +15,7 @@ firefox http://127.0.0.1:8092
 ```Shell
 nix develop
 ghcid -W -c 'cabal repl' -r="Demo.Todo.run"
+ghcid -W -c 'cabal repl' -r="Demo.MineSweeper.run"
 firefox http://127.0.0.1:8092
 ```
 
