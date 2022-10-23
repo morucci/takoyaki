@@ -58,14 +58,15 @@ instance From TaskPrio Text where
 
 data Service
 
-todoApp :: TVar TodoList -> App TodoList TodoAPPEvent
+todoApp :: TVar TodoList -> App TodoList TodoAPPEvent Service
 todoApp appState =
   App
     { appName = "Takoyaki Todo",
       appWSEvent = todoWSEvent,
       appState,
       appRender = renderApp,
-      appHandleEvent = todoHandleEvent
+      appHandleEvent = todoHandleEvent,
+      appService = const . const $ pure ()
     }
 
 todoWSEvent :: WSEvent -> Maybe ([IO TodoAPPEvent])
@@ -101,8 +102,8 @@ todoWSEvent (WSEvent wseName _ wseData) = case wseName of
         getRandom :: IO Int
         getRandom = randomIO
 
-todoHandleEvent :: TodoAPPEvent -> TVar TodoList -> STM [Html ()]
-todoHandleEvent ev appStateV = do
+todoHandleEvent :: TodoAPPEvent -> TVar TodoList -> ServiceQ Service -> STM [Html ()]
+todoHandleEvent ev appStateV _serviceQ = do
   appState <- readTVar appStateV
   case ev of
     AddTask task -> do

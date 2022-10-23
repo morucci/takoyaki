@@ -3,15 +3,18 @@
 
 module Demo.MineSweeper where
 
-import Control.Concurrent.STM (STM, TVar, newTVarIO, readTVar, writeTVar)
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.STM (STM, TVar, atomically, modifyTVar', newTVarIO, readTBQueue, readTVar, readTVarIO, writeTBQueue, writeTVar)
 import Control.Monad.State
 import qualified Data.Map as Map
 import Data.Text (pack)
+import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
 import GHC.Generics (Generic)
 import Lucid
 import System.Random (randomRIO)
 import Takoyaki.Engine
 import Takoyaki.Htmx
+import Text.Printf (printf)
 import Text.Read (readMaybe)
 import Witch
 import Prelude
@@ -22,7 +25,12 @@ data MSState = MSState
   }
   deriving (Show)
 
-data MSGameState = Play | Win | Gameover deriving (Show)
+data MSGameState
+  = Play UTCTime
+  | Win
+  | Gameover
+  | Wait
+  deriving (Show)
 
 data MSCellContent
   = Mine
@@ -47,7 +55,8 @@ type MSBoard = Map.Map MSCellCoord MSCell
 
 data MSEvent
   = NewGame MSBoard
-  | OpenCell MSCellCoord
+  | OpenCell MSCellCoord UTCTime
+  | UpdateTimer Float
   deriving (Show)
 
 initBoard :: IO MSBoard
@@ -155,20 +164,47 @@ openAdjBlank0Cells cellCoord board =
         then let nb = openCell coord b in openAdjBlank0Cells coord nb
         else b
 
-data Service
+data Service = StartTimer
 
-mineSweeperApp :: IO (App MSState MSEvent)
+mineSweeperApp :: IO (App MSState MSEvent Service)
 mineSweeperApp = do
   board <- initBoard
-  appState <- newTVarIO $ MSState board Play
+  appState <- newTVarIO $ MSState board Wait
   pure $
     App
       { appName = "MineSweeper",
         appWSEvent = wSEvent,
         appState,
         appRender = renderApp,
-        appHandleEvent = handleEvent
+        appHandleEvent = handleEvent,
+        appService = service
       }
+
+service :: ServiceQ Service -> AppQ MSEvent -> IO ()
+service serviceQ appQ = do
+  atomically $ writeTBQueue serviceQ StartTimer
+  serviceState <- newTVarIO False
+  forever $ do
+    serviceEvent <- atomically $ readTBQueue serviceQ
+    case serviceEvent of
+      StartTimer -> do
+        atomically $ writeTVar serviceState True
+        initD <- getCurrentTime
+        timerTask initD serviceState
+  where
+    timerTask initD serviceState = do
+      threadDelay 1000000
+      timerState <- readTVarIO serviceState
+      case timerState of
+        True -> do
+          nowD <- getCurrentTime
+          let event = pure . UpdateTimer $ diffTimeToFloat nowD initD
+          atomically $ writeTBQueue appQ [event]
+          timerTask initD serviceState
+        False -> pure ()
+
+diffTimeToFloat :: UTCTime -> UTCTime -> Float
+diffTimeToFloat a b = realToFrac $ diffUTCTime a b
 
 wSEvent :: WSEvent -> Maybe ([IO MSEvent])
 wSEvent (WSEvent wseName _ wseData) = case wseName of
@@ -178,61 +214,102 @@ wSEvent (WSEvent wseName _ wseData) = case wseName of
         let cxM = readMaybe $ from cxS :: Maybe Int
             cyM = readMaybe $ from cyS :: Maybe Int
         case (cxM, cyM) of
-          (Just cx, Just cy) -> Just [pure $ OpenCell $ MSCellCoord cx cy]
+          (Just cx, Just cy) -> Just [openCellEvent $ MSCellCoord cx cy]
           _ -> Nothing
       _ -> Nothing
-  "play" -> Just [newBoardEvent]
+  "play" -> Just [boardEvent]
   _ -> Nothing
   where
     getData = flip Map.lookup wseData
-    newBoardEvent :: IO MSEvent
-    newBoardEvent = do
+    boardEvent :: IO MSEvent
+    boardEvent = do
       newBoard <- initBoard
       pure $ NewGame newBoard
+    openCellEvent :: MSCellCoord -> IO MSEvent
+    openCellEvent coord = do
+      now <- getCurrentTime
+      pure $ OpenCell coord now
 
-handleEvent :: MSEvent -> TVar MSState -> STM [Html ()]
-handleEvent ev appStateV = do
-  appState <- readTVar appStateV
+handleEvent :: MSEvent -> TVar MSState -> ServiceQ Service -> STM [Html ()]
+handleEvent ev appStateV _serviceQ = do
   case ev of
-    OpenCell cellCoord -> do
-      if isMineCell cellCoord appState.board
-        then do
+    OpenCell cellCoord atTime -> do
+      appState' <- readTVar appStateV
+      case appState'.state of
+        Wait -> modifyTVar' appStateV $ \s -> s {state = Play atTime}
+        _ -> pure ()
+      appState <- readTVar appStateV
+      let playDuration = mkPlayDuration appState.state atTime
+      case isMineCell cellCoord appState.board of
+        True -> do
           writeTVar appStateV $ MSState (openCell cellCoord appState.board) Gameover
-          renderAppR <- renderApp appStateV
-          pure [renderAppR]
-        else do
+          board <- renderBoard appStateV
+          panel <- renderPanel appStateV (Just playDuration)
+          pure [board, panel]
+        False -> do
           let gs1 = openCell cellCoord appState.board
               gs2 = openAdjBlank0Cells cellCoord gs1
-              gameState = if countHiddenBlank gs2 == 0 then Win else Play
-          writeTVar appStateV $ MSState gs2 $ gameState
-          renderAppR <- renderApp appStateV
-          pure [renderAppR]
+          case countHiddenBlank gs2 == 0 of
+            True -> do
+              modifyTVar' appStateV $ \s -> s {board = gs2, state = Win}
+              board <- renderBoard appStateV
+              panel <- renderPanel appStateV (Just playDuration)
+              pure [board, panel]
+            False -> do
+              modifyTVar' appStateV $ \s -> s {board = gs2}
+              board <- renderBoard appStateV
+              smiley <- renderSmiley appStateV
+              pure [board, smiley]
     NewGame newBoard -> do
-      writeTVar appStateV $ MSState newBoard Play
-      renderAppR <- renderApp appStateV
-      pure [renderAppR]
+      writeTVar appStateV $ MSState newBoard Wait
+      app <- renderApp appStateV
+      pure [app]
+    UpdateTimer diffT -> do
+      pure [renderTimer diffT]
+  where
+    mkPlayDuration :: MSGameState -> UTCTime -> Float
+    mkPlayDuration s curD = case s of
+      Play startDate -> diffTimeToFloat curD startDate
+      _ -> error "Should not happen"
 
 renderApp :: TVar MSState -> STM (Html ())
 renderApp appStateV = do
-  appState <- readTVar appStateV
+  panel <- renderPanel appStateV (Just 0.0)
+  board <- renderBoard appStateV
   pure $ div_ [id_ "MSMain", class_ "w-60 border-2 border-gray-400 bg-gray-100"] $ do
-    evalState renderPanel appState
-    evalState renderBoard appState
+    panel
+    board
 
-renderPanel :: State MSState (Html ())
-renderPanel = do
-  appState <- get
+renderPanel :: TVar MSState -> Maybe Float -> STM (Html ())
+renderPanel appStateV durationM = do
+  smiley <- renderSmiley appStateV
   pure $ div_ [id_ "MSPanel", class_ "bg-gray-200 m-1 flex justify-between"] $ do
     div_ [class_ "w-10"] "9 💣"
-    withEvent "play" [] $ div_ [class_ "bg-gray-300 border-2 cursor-pointer"] $ case appState.state of
-      Play -> "🙂"
-      Gameover -> "😖"
-      Win -> "😎"
-    div_ [class_ "w-10 text-right"] "0"
+    smiley
+    case durationM of
+      Just duration -> renderTimer duration
+      _ -> pure ()
 
-renderBoard :: State MSState (Html ())
-renderBoard = do
-  appState <- get
+renderSmiley :: TVar MSState -> STM (Html ())
+renderSmiley appStateV = do
+  appState <- readTVar appStateV
+  pure $
+    div_ [id_ "MSSmiley"] $
+      withEvent "play" [] $
+        div_ [class_ "bg-gray-300 border-2 cursor-pointer"] $ case appState.state of
+          Play _ -> "🙂"
+          Wait -> "😴"
+          Gameover -> "😖"
+          Win -> "😎"
+
+renderTimer :: Float -> Html ()
+renderTimer duration = do
+  let durationT = printf "%.1f" duration :: String
+  div_ [id_ "MSTimer", class_ "w-10 text-right"] $ toHtml durationT
+
+renderBoard :: TVar MSState -> STM (Html ())
+renderBoard appStateV = do
+  appState <- readTVar appStateV
   pure $ div_ [id_ "MSBoard", class_ "grid grid-cols-10 gap-1"] $ do
     mapM_ (renderCell appState.state) $ Map.toList appState.board
   where
@@ -259,9 +336,12 @@ renderBoard = do
         showCellValue :: Int -> Html ()
         showCellValue = toHtml . show
         installCellEvent :: MSGameState -> Attribute -> Html () -> Html ()
-        installCellEvent gs cellId elm = case gs of
-          Play -> withEvent "showCell" [cellId] elm
-          _ -> elm
+        installCellEvent gs cellId elm =
+          let elm' = withEvent "showCell" [cellId] elm
+           in case gs of
+                Play _ -> elm'
+                Wait -> elm'
+                _ -> elm
 
 run :: IO ()
 run = do

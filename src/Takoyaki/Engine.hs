@@ -4,6 +4,8 @@ module Takoyaki.Engine
     WSEvent (..),
     withEvent,
     getFromJSON,
+    ServiceQ,
+    AppQ,
   )
 where
 
@@ -26,41 +28,43 @@ import Takoyaki.Htmx
 import qualified XStatic.Tailwind as XStatic
 import Prelude
 
-data App s ev = App
+data App s ev sev = App
   { appName :: Text,
     appWSEvent :: WSEvent -> Maybe ([IO ev]),
     appState :: TVar s,
     appRender :: TVar s -> STM (Html ()),
-    appHandleEvent :: ev -> TVar s -> STM [Html ()]
+    appHandleEvent :: ev -> TVar s -> ServiceQ sev -> STM [Html ()],
+    appService :: ServiceQ sev -> AppQ ev -> IO ()
   }
 
 type AppQ ev = TBQueue ([IO ev])
 
 type ServiceQ sev = TBQueue sev
 
-connectionHandler :: Show ev => App s ev -> WS.Connection -> Handler ()
+connectionHandler :: Show ev => App s ev sev -> WS.Connection -> Handler ()
 connectionHandler app conn = do
   appQ <- liftIO . atomically $ initAppQ
-  _serviceQ <- liftIO . atomically $ initServiceQ
+  serviceQ <- liftIO . atomically $ initServiceQ
   void . liftIO . runConcurrently $
-    (,)
+    (,,)
       <$> Concurrently (handleR appQ)
-      <*> Concurrently (handleS appQ)
+      <*> Concurrently (handleS appQ serviceQ)
+      <*> Concurrently (app.appService serviceQ appQ)
   where
     initAppQ :: STM (AppQ ev)
     initAppQ = newTBQueue 10
     initServiceQ :: STM (ServiceQ sev)
     initServiceQ = newTBQueue 10
 
-    handleS appQ = do
+    handleS appQ serviceQ = do
       evIOs <- atomically $ readTBQueue appQ
       mapM_ handleEV evIOs
-      handleS appQ
+      handleS appQ serviceQ
       where
         handleEV eio = do
           event <- eio
           putStrLn $ "Handling event: " <> show event
-          fragments <- atomically $ app.appHandleEvent event app.appState
+          fragments <- atomically $ app.appHandleEvent event app.appState serviceQ
           mapM_ (WS.sendTextData conn . renderBS) fragments
 
     handleR appQ = do
@@ -100,11 +104,11 @@ type API =
     :<|> Get '[HTML] (Html ())
     :<|> "ws" :> WebSocket
 
-appServer :: Show ev => App s ev -> Server API
+appServer :: Show ev => App s ev sev -> Server API
 appServer app =
   xstaticServant (xStaticFiles <> [XStatic.tailwind])
     :<|> pure (bootHandler app.appName)
     :<|> connectionHandler app
 
-runServer :: Show ev => App s ev -> IO ()
+runServer :: Show ev => App s ev sev -> IO ()
 runServer app = Warp.run 8092 $ serve (Proxy @API) $ appServer app
