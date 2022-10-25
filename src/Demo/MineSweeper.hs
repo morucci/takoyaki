@@ -3,8 +3,7 @@
 
 module Demo.MineSweeper where
 
-import Control.Concurrent.STM (STM, TVar, atomically, modifyTVar', newTVarIO, readTVar, readTVarIO, writeTVar)
-import Control.Monad.State
+import Control.Concurrent.STM
 import qualified Data.Map as Map
 import Data.Text (pack)
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
@@ -165,15 +164,17 @@ openAdjBlank0Cells cellCoord board =
 
 mineSweeperApp :: IO (App MSState)
 mineSweeperApp = do
-  board <- initBoard
-  appState <- newTVarIO $ MSState board Wait
   pure $
     App
       { appName = "MineSweeper",
-        appState,
+        appGenState,
         appRender = renderApp,
         appHandleEvent = handleEvent
       }
+  where
+    appGenState = do
+      board <- initBoard
+      pure $ MSState board Wait
 
 diffTimeToFloat :: UTCTime -> UTCTime -> Float
 diffTimeToFloat a b = realToFrac $ diffUTCTime a b

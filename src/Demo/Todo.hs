@@ -3,7 +3,7 @@
 
 module Demo.Todo where
 
-import Control.Concurrent.STM (STM, TVar, atomically, newTVarIO, readTVar, readTVarIO, writeTVar)
+import Control.Concurrent.STM
 import Control.Monad.State
 import qualified Data.Map as Map
 import Data.Text (Text)
@@ -56,14 +56,17 @@ instance From TaskPrio Text where
     Medium -> "Medium"
     Low -> "Low"
 
-todoApp :: TVar TodoList -> App TodoList
-todoApp appState =
+todoApp :: App TodoList
+todoApp =
   App
     { appName = "Takoyaki Todo",
-      appState,
+      appGenState,
       appRender = renderApp,
       appHandleEvent = todoHandleEvent
     }
+  where
+    appGenState = pure $ TodoList $ [Task "1" "This is a demo task" date Medium]
+    date = parseTimeOrError False defaultTimeLocale "%F" "2022-10-19"
 
 todoWSEvent :: WSEvent -> IO (Maybe TodoAPPEvent)
 todoWSEvent (WSEvent wseName _ wseData) = case wseName of
@@ -205,12 +208,5 @@ updateTask (TodoList tasks) taskId' TaskUpdate {..} = TodoList $ map update task
         then Task taskId taskUpdateData taskDate taskUpdatePrio
         else task
 
-initTodoState :: TodoList
-initTodoState = TodoList $ [Task "1" "This is a demo task" date Medium]
-  where
-    date = parseTimeOrError False defaultTimeLocale "%F" "2022-10-19"
-
 run :: IO ()
-run = do
-  appState <- newTVarIO initTodoState
-  runServer $ todoApp appState
+run = runServer todoApp

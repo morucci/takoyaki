@@ -27,7 +27,7 @@ import Prelude
 
 data App s = App
   { appName :: Text,
-    appState :: TVar s,
+    appGenState :: IO s,
     appRender :: TVar s -> STM (Html ()),
     appHandleEvent :: WSEvent -> TVar s -> IO [Html ()]
   }
@@ -36,17 +36,19 @@ connectionHandler :: App s -> WS.Connection -> Handler ()
 connectionHandler app conn = liftIO $ do
   WS.withPingThread conn 5 (pure ()) $ do
     putStrLn [i|New connection ...|]
-    appDom <- atomically $ app.appRender app.appState
+    s <- app.appGenState
+    state <- newTVarIO s
+    appDom <- atomically $ app.appRender state
     WS.sendTextData conn . renderBS . div_ [id_ "init"] $ appDom
-    handleEvents
+    handleEvents state
   where
-    handleEvents = forever $ do
+    handleEvents state = forever $ do
       msg <- WS.receiveDataMessage conn
       case decodeWSEvent msg of
         Nothing -> pure ()
         Just wsEvent -> do
           putStrLn $ "Received WS event: " <> show wsEvent
-          fragments <- app.appHandleEvent wsEvent app.appState
+          fragments <- app.appHandleEvent wsEvent state
           mapM_ (WS.sendTextData conn . renderBS) fragments
 
 withEvent :: TriggerId -> [Attribute] -> Html () -> Html ()
