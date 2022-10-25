@@ -56,73 +56,69 @@ instance From TaskPrio Text where
     Medium -> "Medium"
     Low -> "Low"
 
-todoApp :: TVar TodoList -> App TodoList TodoAPPEvent
+todoApp :: TVar TodoList -> App TodoList
 todoApp appState =
   App
     { appName = "Takoyaki Todo",
-      appWSEvent = todoWSEvent,
       appState,
       appRender = renderApp,
       appHandleEvent = todoHandleEvent
     }
 
-todoWSEvent :: WSEvent -> Maybe ([IO TodoAPPEvent])
+todoWSEvent :: WSEvent -> IO (Maybe TodoAPPEvent)
 todoWSEvent (WSEvent wseName _ wseData) = case wseName of
   "AddTask" -> do
     case (getData "task-name", getData "task-prio") of
       (Just (Just taskData), Just (Just taskPrio)) -> do
-        Just [buildAddTaskEvent taskData taskPrio]
-      _ -> Nothing
+        now <- getCurrentTime
+        taskIdI <- getRandom
+        pure $ Just $ AddTask $ Task (from $ show taskIdI) taskData now (from taskPrio)
+      _ -> pure Nothing
   "DelTask" -> do
     case getData "TaskId" of
-      (Just (Just taskId)) -> Just [pure $ DelTask taskId]
-      _ -> Nothing
+      (Just (Just taskId)) -> pure $ Just $ DelTask taskId
+      _ -> pure Nothing
   "EditTask" -> do
     case getData "TaskId" of
-      (Just (Just taskId)) -> Just [pure $ EditTask taskId]
-      _ -> Nothing
+      (Just (Just taskId)) -> pure $ Just $ EditTask taskId
+      _ -> pure Nothing
   "UpdateTask" -> do
     case (getData "task-name", getData "task-prio", getData "taskId") of
       (Just (Just taskData), Just (Just taskPrio), Just (Just taskId)) -> do
         let taskUpdate = TaskUpdate taskData (from taskPrio)
-        Just [pure $ UpdateTask taskId taskUpdate, pure $ RenderAddTask]
-      _ -> Nothing
-  _ -> Nothing
+        pure $ Just $ UpdateTask taskId taskUpdate
+      _ -> pure Nothing
+  _ -> pure Nothing
   where
     getData = flip Map.lookup wseData
-    buildAddTaskEvent :: Text -> Text -> IO TodoAPPEvent
-    buildAddTaskEvent taskData taskPrio = do
-      now <- getCurrentTime
-      taskIdI <- getRandom
-      pure . AddTask $ Task (from $ show taskIdI) taskData now (from taskPrio)
-      where
-        getRandom :: IO Int
-        getRandom = randomIO
+    getRandom :: IO Int
+    getRandom = randomIO
 
-todoHandleEvent :: TodoAPPEvent -> TVar TodoList -> IO [Html ()]
-todoHandleEvent ev appStateV = do
+todoHandleEvent :: WSEvent -> TVar TodoList -> IO [Html ()]
+todoHandleEvent wEv appStateV = do
   appState <- readTVarIO appStateV
-  case ev of
-    AddTask task -> do
+  evM <- todoWSEvent wEv
+  case evM of
+    Just (AddTask task) -> do
       todoListR <- atomically $ do
         writeTVar appStateV $ addTask appState task
         todoListH appStateV
       pure [todoListR]
-    DelTask taskId -> do
+    Just (DelTask taskId) -> do
       todoListR <- atomically $ do
         writeTVar appStateV $ delTask appState taskId
         todoListH appStateV
       pure [todoListR]
-    EditTask taskId -> do
+    Just (EditTask taskId) -> do
       case getTask appState taskId of
         Just task -> pure [editTaskFormH task]
         Nothing -> pure []
-    UpdateTask taskId taskUpdate -> do
+    Just (UpdateTask taskId taskUpdate) -> do
       todoListR <- atomically $ do
         writeTVar appStateV $ updateTask appState taskId taskUpdate
         todoListH appStateV
-      pure [todoListR]
-    RenderAddTask -> pure [addTaskFormH]
+      pure [todoListR, addTaskFormH]
+    _ -> pure []
 
 renderApp :: TVar TodoList -> STM (Html ())
 renderApp appStateV = do

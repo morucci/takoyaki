@@ -163,14 +163,13 @@ openAdjBlank0Cells cellCoord board =
         then let nb = openCell coord b in openAdjBlank0Cells coord nb
         else b
 
-mineSweeperApp :: IO (App MSState MSEvent)
+mineSweeperApp :: IO (App MSState)
 mineSweeperApp = do
   board <- initBoard
   appState <- newTVarIO $ MSState board Wait
   pure $
     App
       { appName = "MineSweeper",
-        appWSEvent = wSEvent,
         appState,
         appRender = renderApp,
         appHandleEvent = handleEvent
@@ -179,7 +178,7 @@ mineSweeperApp = do
 diffTimeToFloat :: UTCTime -> UTCTime -> Float
 diffTimeToFloat a b = realToFrac $ diffUTCTime a b
 
-wSEvent :: WSEvent -> Maybe ([IO MSEvent])
+wSEvent :: WSEvent -> IO (Maybe MSEvent)
 wSEvent (WSEvent wseName _ wseData) = case wseName of
   "showCell" -> do
     case (getData "cx", getData "cy") of
@@ -187,26 +186,23 @@ wSEvent (WSEvent wseName _ wseData) = case wseName of
         let cxM = readMaybe $ from cxS :: Maybe Int
             cyM = readMaybe $ from cyS :: Maybe Int
         case (cxM, cyM) of
-          (Just cx, Just cy) -> Just [openCellEvent $ MSCellCoord cx cy]
-          _ -> Nothing
-      _ -> Nothing
-  "play" -> Just [boardEvent]
-  _ -> Nothing
+          (Just cx, Just cy) -> do
+            now <- getCurrentTime
+            pure . Just $ OpenCell (MSCellCoord cx cy) now
+          _ -> pure Nothing
+      _ -> pure Nothing
+  "play" -> do
+    newBoard <- initBoard
+    pure $ Just $ NewGame newBoard
+  _ -> pure Nothing
   where
     getData = flip Map.lookup wseData
-    boardEvent :: IO MSEvent
-    boardEvent = do
-      newBoard <- initBoard
-      pure $ NewGame newBoard
-    openCellEvent :: MSCellCoord -> IO MSEvent
-    openCellEvent coord = do
-      now <- getCurrentTime
-      pure $ OpenCell coord now
 
-handleEvent :: MSEvent -> TVar MSState -> IO [Html ()]
-handleEvent ev appStateV = do
-  case ev of
-    OpenCell cellCoord atTime -> do
+handleEvent :: WSEvent -> TVar MSState -> IO [Html ()]
+handleEvent wEv appStateV = do
+  evM <- wSEvent wEv
+  case evM of
+    Just (OpenCell cellCoord atTime) -> do
       appState' <- readTVarIO appStateV
       case appState'.state of
         Wait -> atomically $ modifyTVar' appStateV $ \s -> s {state = Play atTime}
@@ -239,13 +235,15 @@ handleEvent ev appStateV = do
                 smiley <- renderSmiley appStateV
                 pure (board, smiley)
               pure [board, smiley]
-    NewGame newBoard -> do
+    Just (NewGame newBoard) -> do
       atomically $ writeTVar appStateV $ MSState newBoard Wait
       app <- atomically $ renderApp appStateV
       pure [app]
-    UpdateTimer diffT -> do
-      pure [renderTimer diffT]
+    _ -> pure []
   where
+    -- UpdateTimer diffT -> do
+    --   pure [renderTimer diffT]
+
     mkPlayDuration :: MSGameState -> UTCTime -> Float
     mkPlayDuration s curD = case s of
       Play startDate -> diffTimeToFloat curD startDate
