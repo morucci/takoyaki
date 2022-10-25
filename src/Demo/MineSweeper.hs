@@ -3,12 +3,16 @@
 
 module Demo.MineSweeper where
 
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.Async (withAsync)
 import Control.Concurrent.STM
+import Control.Monad (forever)
 import qualified Data.Map as Map
 import Data.Text (pack)
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
 import GHC.Generics (Generic)
 import Lucid
+import qualified Network.WebSockets as WS
 import System.Random (randomRIO)
 import Takoyaki.Engine
 import Takoyaki.Htmx
@@ -162,14 +166,17 @@ openAdjBlank0Cells cellCoord board =
         then let nb = openCell coord b in openAdjBlank0Cells coord nb
         else b
 
-mineSweeperApp :: IO (App MSState)
+data ServiceEvent = StartTimer UTCTime | StopTimer deriving (Show)
+
+mineSweeperApp :: IO (App MSState ServiceEvent)
 mineSweeperApp = do
   pure $
     App
       { appName = "MineSweeper",
         appGenState,
         appRender = renderApp,
-        appHandleEvent = handleEvent
+        appHandleEvent = handleEvent,
+        appService = serviceThread
       }
   where
     appGenState = do
@@ -178,6 +185,28 @@ mineSweeperApp = do
 
 diffTimeToFloat :: UTCTime -> UTCTime -> Float
 diffTimeToFloat a b = realToFrac $ diffUTCTime a b
+
+serviceThread :: TVar MSState -> TBQueue ServiceEvent -> WS.Connection -> IO b
+serviceThread _appStateV serviceQ conn = do
+  timerState <- newTVarIO Nothing
+  forever $ do
+    withAsync (inner timerState) $ \_ -> do
+      forever $ do
+        atomically $ do
+          event <- readTBQueue serviceQ
+          case event of
+            StartTimer atTime -> writeTVar timerState (Just atTime)
+            StopTimer -> writeTVar timerState Nothing
+  where
+    inner timerState = forever $ do
+      ts <- readTVarIO timerState
+      case ts of
+        Just atTime -> do
+          now <- getCurrentTime
+          let diffT = diffTimeToFloat now atTime
+          WS.sendTextData conn $ renderBS $ renderTimer diffT
+        Nothing -> pure ()
+      threadDelay 500000
 
 wSEvent :: WSEvent -> IO (Maybe MSEvent)
 wSEvent (WSEvent wseName _ wseData) = case wseName of
@@ -199,20 +228,23 @@ wSEvent (WSEvent wseName _ wseData) = case wseName of
   where
     getData = flip Map.lookup wseData
 
-handleEvent :: WSEvent -> TVar MSState -> IO [Html ()]
-handleEvent wEv appStateV = do
+handleEvent :: WSEvent -> TVar MSState -> TBQueue ServiceEvent -> IO [Html ()]
+handleEvent wEv appStateV serviceQ = do
   evM <- wSEvent wEv
   case evM of
     Just (OpenCell cellCoord atTime) -> do
       appState' <- readTVarIO appStateV
       case appState'.state of
-        Wait -> atomically $ modifyTVar' appStateV $ \s -> s {state = Play atTime}
+        Wait -> atomically $ do
+          modifyTVar' appStateV $ \s -> s {state = Play atTime}
+          writeTBQueue serviceQ (StartTimer atTime)
         _ -> pure ()
       appState <- readTVarIO appStateV
       let playDuration = mkPlayDuration appState.state atTime
       case isMineCell cellCoord appState.board of
         True -> do
           (board, panel) <- atomically $ do
+            writeTBQueue serviceQ StopTimer
             writeTVar appStateV $ MSState (openCell cellCoord appState.board) Gameover
             board <- renderBoard appStateV
             panel <- renderPanel appStateV (Just playDuration)
@@ -242,9 +274,6 @@ handleEvent wEv appStateV = do
       pure [app]
     _ -> pure []
   where
-    -- UpdateTimer diffT -> do
-    --   pure [renderTimer diffT]
-
     mkPlayDuration :: MSGameState -> UTCTime -> Float
     mkPlayDuration s curD = case s of
       Play startDate -> diffTimeToFloat curD startDate

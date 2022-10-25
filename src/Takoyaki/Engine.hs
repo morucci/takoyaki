@@ -7,6 +7,7 @@ module Takoyaki.Engine
   )
 where
 
+import Control.Concurrent.Async (concurrently_)
 import Control.Concurrent.STM
 import Control.Monad (forever)
 import Control.Monad.IO.Class (liftIO)
@@ -25,30 +26,32 @@ import Takoyaki.Htmx
 import qualified XStatic.Tailwind as XStatic
 import Prelude
 
-data App s = App
+data App s se = App
   { appName :: Text,
     appGenState :: IO s,
     appRender :: TVar s -> STM (Html ()),
-    appHandleEvent :: WSEvent -> TVar s -> IO [Html ()]
+    appHandleEvent :: WSEvent -> TVar s -> TBQueue se -> IO [Html ()],
+    appService :: TVar s -> TBQueue se -> WS.Connection -> IO ()
   }
 
-connectionHandler :: App s -> WS.Connection -> Handler ()
+connectionHandler :: App s se -> WS.Connection -> Handler ()
 connectionHandler app conn = liftIO $ do
   WS.withPingThread conn 5 (pure ()) $ do
     putStrLn [i|New connection ...|]
     s <- app.appGenState
     state <- newTVarIO s
+    serviceQ <- newTBQueueIO 1
     appDom <- atomically $ app.appRender state
     WS.sendTextData conn . renderBS . div_ [id_ "init"] $ appDom
-    handleEvents state
+    concurrently_ (handleEvents state serviceQ) (app.appService state serviceQ conn)
   where
-    handleEvents state = forever $ do
+    handleEvents state serviceQ = forever $ do
       msg <- WS.receiveDataMessage conn
       case decodeWSEvent msg of
         Nothing -> pure ()
         Just wsEvent -> do
           putStrLn $ "Received WS event: " <> show wsEvent
-          fragments <- app.appHandleEvent wsEvent state
+          fragments <- app.appHandleEvent wsEvent state serviceQ
           mapM_ (WS.sendTextData conn . renderBS) fragments
 
 withEvent :: TriggerId -> [Attribute] -> Html () -> Html ()
@@ -70,11 +73,11 @@ type API =
     :<|> Get '[HTML] (Html ())
     :<|> "ws" :> WebSocket
 
-appServer :: App s -> Server API
+appServer :: App s se -> Server API
 appServer app =
   xstaticServant (xStaticFiles <> [XStatic.tailwind])
     :<|> pure (bootHandler app.appName)
     :<|> connectionHandler app
 
-runServer :: App s -> IO ()
+runServer :: App s se -> IO ()
 runServer app = Warp.run 8092 $ serve (Proxy @API) $ appServer app
