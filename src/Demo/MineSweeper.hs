@@ -230,39 +230,45 @@ wSEvent (WSEvent wseName _ wseData) = case wseName of
       now <- getCurrentTime
       pure $ OpenCell coord now
 
-handleEvent :: MSEvent -> TVar MSState -> ServiceQ Service -> STM [Html ()]
+handleEvent :: MSEvent -> TVar MSState -> ServiceQ Service -> IO [Html ()]
 handleEvent ev appStateV _serviceQ = do
   case ev of
     OpenCell cellCoord atTime -> do
-      appState' <- readTVar appStateV
+      appState' <- readTVarIO appStateV
       case appState'.state of
-        Wait -> modifyTVar' appStateV $ \s -> s {state = Play atTime}
+        Wait -> atomically $ modifyTVar' appStateV $ \s -> s {state = Play atTime}
         _ -> pure ()
-      appState <- readTVar appStateV
+      appState <- readTVarIO appStateV
       let playDuration = mkPlayDuration appState.state atTime
       case isMineCell cellCoord appState.board of
         True -> do
-          writeTVar appStateV $ MSState (openCell cellCoord appState.board) Gameover
-          board <- renderBoard appStateV
-          panel <- renderPanel appStateV (Just playDuration)
+          (board, panel) <- atomically $ do
+            writeTVar appStateV $ MSState (openCell cellCoord appState.board) Gameover
+            board <- renderBoard appStateV
+            panel <- renderPanel appStateV (Just playDuration)
+            pure (board, panel)
           pure [board, panel]
         False -> do
           let gs1 = openCell cellCoord appState.board
               gs2 = openAdjBlank0Cells cellCoord gs1
           case countHiddenBlank gs2 == 0 of
             True -> do
-              modifyTVar' appStateV $ \s -> s {board = gs2, state = Win}
-              board <- renderBoard appStateV
-              panel <- renderPanel appStateV (Just playDuration)
+              (board, panel) <- atomically $ do
+                modifyTVar' appStateV $ \s -> s {board = gs2, state = Win}
+                board <- renderBoard appStateV
+                panel <- renderPanel appStateV (Just playDuration)
+                pure (board, panel)
               pure [board, panel]
             False -> do
-              modifyTVar' appStateV $ \s -> s {board = gs2}
-              board <- renderBoard appStateV
-              smiley <- renderSmiley appStateV
+              (board, smiley) <- atomically $ do
+                modifyTVar' appStateV $ \s -> s {board = gs2}
+                board <- renderBoard appStateV
+                smiley <- renderSmiley appStateV
+                pure (board, smiley)
               pure [board, smiley]
     NewGame newBoard -> do
-      writeTVar appStateV $ MSState newBoard Wait
-      app <- renderApp appStateV
+      atomically $ writeTVar appStateV $ MSState newBoard Wait
+      app <- atomically $ renderApp appStateV
       pure [app]
     UpdateTimer diffT -> do
       pure [renderTimer diffT]

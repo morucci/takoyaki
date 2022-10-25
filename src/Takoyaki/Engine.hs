@@ -33,7 +33,7 @@ data App s ev sev = App
     appWSEvent :: WSEvent -> Maybe ([IO ev]),
     appState :: TVar s,
     appRender :: TVar s -> STM (Html ()),
-    appHandleEvent :: ev -> TVar s -> ServiceQ sev -> STM [Html ()],
+    appHandleEvent :: ev -> TVar s -> ServiceQ sev -> IO [Html ()],
     appService :: ServiceQ sev -> AppQ ev -> IO ()
   }
 
@@ -64,7 +64,7 @@ connectionHandler app conn = do
         handleEV eio = do
           event <- eio
           putStrLn $ "Handling event: " <> show event
-          fragments <- atomically $ app.appHandleEvent event app.appState serviceQ
+          fragments <- app.appHandleEvent event app.appState serviceQ
           mapM_ (WS.sendTextData conn . renderBS) fragments
 
     handleR appQ = do

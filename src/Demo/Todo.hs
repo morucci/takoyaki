@@ -3,7 +3,7 @@
 
 module Demo.Todo where
 
-import Control.Concurrent.STM (STM, TVar, newTVarIO, readTVar, writeTVar)
+import Control.Concurrent.STM (STM, TVar, atomically, newTVarIO, readTVar, readTVarIO, writeTVar)
 import Control.Monad.State
 import qualified Data.Map as Map
 import Data.Text (Text)
@@ -102,25 +102,28 @@ todoWSEvent (WSEvent wseName _ wseData) = case wseName of
         getRandom :: IO Int
         getRandom = randomIO
 
-todoHandleEvent :: TodoAPPEvent -> TVar TodoList -> ServiceQ Service -> STM [Html ()]
+todoHandleEvent :: TodoAPPEvent -> TVar TodoList -> ServiceQ Service -> IO [Html ()]
 todoHandleEvent ev appStateV _serviceQ = do
-  appState <- readTVar appStateV
+  appState <- readTVarIO appStateV
   case ev of
     AddTask task -> do
-      writeTVar appStateV $ addTask appState task
-      todoListR <- todoListH appStateV
+      todoListR <- atomically $ do
+        writeTVar appStateV $ addTask appState task
+        todoListH appStateV
       pure [todoListR]
     DelTask taskId -> do
-      writeTVar appStateV $ delTask appState taskId
-      todoListR <- todoListH appStateV
+      todoListR <- atomically $ do
+        writeTVar appStateV $ delTask appState taskId
+        todoListH appStateV
       pure [todoListR]
     EditTask taskId -> do
       case getTask appState taskId of
         Just task -> pure [editTaskFormH task]
         Nothing -> pure []
     UpdateTask taskId taskUpdate -> do
-      writeTVar appStateV $ updateTask appState taskId taskUpdate
-      todoListR <- todoListH appStateV
+      todoListR <- atomically $ do
+        writeTVar appStateV $ updateTask appState taskId taskUpdate
+        todoListH appStateV
       pure [todoListR]
     RenderAddTask -> pure [addTaskFormH]
 
