@@ -3,8 +3,7 @@
 
 module Demo.MineSweeper where
 
-import Control.Concurrent (threadDelay)
-import Control.Concurrent.STM (STM, TVar, atomically, modifyTVar', newTVarIO, readTBQueue, readTVar, readTVarIO, writeTBQueue, writeTVar)
+import Control.Concurrent.STM (STM, TVar, atomically, modifyTVar', newTVarIO, readTVar, readTVarIO, writeTVar)
 import Control.Monad.State
 import qualified Data.Map as Map
 import Data.Text (pack)
@@ -164,9 +163,7 @@ openAdjBlank0Cells cellCoord board =
         then let nb = openCell coord b in openAdjBlank0Cells coord nb
         else b
 
-data Service = StartTimer
-
-mineSweeperApp :: IO (App MSState MSEvent Service)
+mineSweeperApp :: IO (App MSState MSEvent)
 mineSweeperApp = do
   board <- initBoard
   appState <- newTVarIO $ MSState board Wait
@@ -176,32 +173,8 @@ mineSweeperApp = do
         appWSEvent = wSEvent,
         appState,
         appRender = renderApp,
-        appHandleEvent = handleEvent,
-        appService = service
+        appHandleEvent = handleEvent
       }
-
-service :: ServiceQ Service -> AppQ MSEvent -> IO ()
-service serviceQ appQ = do
-  atomically $ writeTBQueue serviceQ StartTimer
-  serviceState <- newTVarIO False
-  forever $ do
-    serviceEvent <- atomically $ readTBQueue serviceQ
-    case serviceEvent of
-      StartTimer -> do
-        atomically $ writeTVar serviceState True
-        initD <- getCurrentTime
-        timerTask initD serviceState
-  where
-    timerTask initD serviceState = do
-      threadDelay 1000000
-      timerState <- readTVarIO serviceState
-      case timerState of
-        True -> do
-          nowD <- getCurrentTime
-          let event = pure . UpdateTimer $ diffTimeToFloat nowD initD
-          atomically $ writeTBQueue appQ [event]
-          timerTask initD serviceState
-        False -> pure ()
 
 diffTimeToFloat :: UTCTime -> UTCTime -> Float
 diffTimeToFloat a b = realToFrac $ diffUTCTime a b
@@ -230,8 +203,8 @@ wSEvent (WSEvent wseName _ wseData) = case wseName of
       now <- getCurrentTime
       pure $ OpenCell coord now
 
-handleEvent :: MSEvent -> TVar MSState -> ServiceQ Service -> IO [Html ()]
-handleEvent ev appStateV _serviceQ = do
+handleEvent :: MSEvent -> TVar MSState -> IO [Html ()]
+handleEvent ev appStateV = do
   case ev of
     OpenCell cellCoord atTime -> do
       appState' <- readTVarIO appStateV

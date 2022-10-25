@@ -56,17 +56,14 @@ instance From TaskPrio Text where
     Medium -> "Medium"
     Low -> "Low"
 
-data Service
-
-todoApp :: TVar TodoList -> App TodoList TodoAPPEvent Service
+todoApp :: TVar TodoList -> App TodoList TodoAPPEvent
 todoApp appState =
   App
     { appName = "Takoyaki Todo",
       appWSEvent = todoWSEvent,
       appState,
       appRender = renderApp,
-      appHandleEvent = todoHandleEvent,
-      appService = const . const $ pure ()
+      appHandleEvent = todoHandleEvent
     }
 
 todoWSEvent :: WSEvent -> Maybe ([IO TodoAPPEvent])
@@ -102,8 +99,8 @@ todoWSEvent (WSEvent wseName _ wseData) = case wseName of
         getRandom :: IO Int
         getRandom = randomIO
 
-todoHandleEvent :: TodoAPPEvent -> TVar TodoList -> ServiceQ Service -> IO [Html ()]
-todoHandleEvent ev appStateV _serviceQ = do
+todoHandleEvent :: TodoAPPEvent -> TVar TodoList -> IO [Html ()]
+todoHandleEvent ev appStateV = do
   appState <- readTVarIO appStateV
   case ev of
     AddTask task -> do
