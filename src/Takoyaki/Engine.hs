@@ -34,14 +34,6 @@ data App s se = App
     appService :: TVar s -> TBQueue se -> WS.Connection -> IO ()
   }
 
-kiConcurrently :: IO a -> IO b -> IO ()
-kiConcurrently a1 a2 =
-  Ki.scoped $ \scope -> do
-    t1 <- Ki.fork scope a1
-    void a2
-    void $ atomically (Ki.await t1)
-    pure ()
-
 connectionHandler :: App s se -> WS.Connection -> Handler ()
 connectionHandler app conn = liftIO $ do
   WS.withPingThread conn 5 (pure ()) $ do
@@ -51,7 +43,10 @@ connectionHandler app conn = liftIO $ do
     serviceQ <- newTBQueueIO 1
     appDom <- atomically $ app.appRender state
     WS.sendTextData conn . renderBS . div_ [id_ "init"] $ appDom
-    kiConcurrently (handleEvents state serviceQ) (app.appService state serviceQ conn)
+    Ki.scoped $ \scope -> do
+      serviceT <- Ki.fork scope (app.appService state serviceQ conn)
+      void $ handleEvents state serviceQ
+      atomically $ Ki.await serviceT
   where
     handleEvents state serviceQ = forever $ do
       msg <- WS.receiveDataMessage conn
