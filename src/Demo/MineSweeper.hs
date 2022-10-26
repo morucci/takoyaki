@@ -269,8 +269,10 @@ handleEvent wEv appStateV serviceQ = do
                 pure (board, smiley)
               pure [board, smiley]
     Just (NewGame newBoard) -> do
-      atomically $ writeTVar appStateV $ MSState newBoard Wait
-      app <- atomically $ renderApp appStateV
+      app <- atomically $ do
+        writeTVar appStateV $ MSState newBoard Wait
+        writeTBQueue serviceQ StopTimer
+        renderApp appStateV
       pure [app]
     _ -> pure []
   where
