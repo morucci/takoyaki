@@ -4,7 +4,6 @@
 module Demo.MineSweeper where
 
 import Control.Concurrent (threadDelay)
-import Control.Concurrent.Async (withAsync)
 import Control.Concurrent.STM
 import Control.Monad (forever)
 import qualified Data.Map as Map
