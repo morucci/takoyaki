@@ -11,6 +11,7 @@ import qualified Data.Map as Map
 import Data.Text (pack)
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
 import GHC.Generics (Generic)
+import qualified Ki
 import Lucid
 import qualified Network.WebSockets as WS
 import System.Random (randomRIO)
@@ -186,19 +187,17 @@ mineSweeperApp = do
 diffTimeToFloat :: UTCTime -> UTCTime -> Float
 diffTimeToFloat a b = realToFrac $ diffUTCTime a b
 
-serviceThread :: TVar MSState -> TBQueue ServiceEvent -> WS.Connection -> IO b
+serviceThread :: TVar MSState -> TBQueue ServiceEvent -> WS.Connection -> IO ()
 serviceThread _appStateV serviceQ conn = do
   timerState <- newTVarIO Nothing
-  forever $ do
-    withAsync (inner timerState) $ \_ -> do
-      forever $ do
-        atomically $ do
-          event <- readTBQueue serviceQ
-          case event of
-            StartTimer atTime -> writeTVar timerState (Just atTime)
-            StopTimer -> writeTVar timerState Nothing
-  where
-    inner timerState = forever $ do
+  Ki.scoped $ \scope -> do
+    Ki.fork_ scope $ forever $ do
+      atomically $ do
+        event <- readTBQueue serviceQ
+        case event of
+          StartTimer atTime -> writeTVar timerState (Just atTime)
+          StopTimer -> writeTVar timerState Nothing
+    Ki.fork_ scope $ forever $ do
       ts <- readTVarIO timerState
       case ts of
         Just atTime -> do
@@ -207,6 +206,7 @@ serviceThread _appStateV serviceQ conn = do
           WS.sendTextData conn $ renderBS $ renderTimer diffT
         Nothing -> pure ()
       threadDelay 500000
+    atomically $ Ki.awaitAll scope
 
 wSEvent :: WSEvent -> IO (Maybe MSEvent)
 wSEvent (WSEvent wseName _ wseData) = case wseName of
