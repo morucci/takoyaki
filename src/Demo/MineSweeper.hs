@@ -7,7 +7,7 @@ import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM
 import Control.Monad (forever, void)
 import qualified Data.Map as Map
-import Data.Text (pack)
+import Data.Text (Text, pack)
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
 import GHC.Generics (Generic)
 import qualified Ki
@@ -23,7 +23,15 @@ import Prelude
 
 data MSState = MSState
   { board :: MSBoard,
-    state :: MSGameState
+    state :: MSGameState,
+    settings :: MSSettings
+  }
+  deriving (Show)
+
+data MSSettings = MSSettings
+  { rowCount :: Int,
+    colCount :: Int,
+    mineCount :: Int
   }
   deriving (Show)
 
@@ -59,16 +67,19 @@ data MSEvent
   = NewGame
   | OpenCell MSCellCoord
 
-initBoard :: IO MSBoard
-initBoard = do
-  let cellsCoords = [MSCellCoord x y | x <- [0 .. 9], y <- [0 .. 9]]
+defaultSettings :: MSSettings
+defaultSettings = MSSettings 9 9 9
+
+initBoard :: MSSettings -> IO MSBoard
+initBoard settings@MSSettings {..} = do
+  let cellsCoords = [MSCellCoord x y | x <- [0 .. colCount], y <- [0 .. rowCount]]
       blankBoard = Map.fromList $ map (\coord -> (coord, MSCell (Blank 0) Hidden)) cellsCoords
   minesCoords <- getMinesCoords cellsCoords []
   pure $ setBoard blankBoard minesCoords
   where
     getMinesCoords :: [MSCellCoord] -> [MSCellCoord] -> IO [MSCellCoord]
     getMinesCoords availableCellsCords minesCoords = do
-      if length minesCoords == 9
+      if length minesCoords == mineCount
         then pure minesCoords
         else do
           selectedIndex <- randomRIO (0, length availableCellsCords - 1)
@@ -77,7 +88,7 @@ initBoard = do
           getMinesCoords remainingCellsCords (minesCoords <> [selectedCoord])
     setBoard :: MSBoard -> [MSCellCoord] -> MSBoard
     setBoard board minesCoords =
-      let adjCellds = concatMap getAdjCellCoords minesCoords
+      let adjCellds = concatMap (getAdjCellCoords settings) minesCoords
           board' = installAdjCells board adjCellds
        in installMines board' minesCoords
       where
@@ -103,9 +114,13 @@ initBoard = do
             (MSCell (Blank 1) Hidden)
             b
 
-getAdjCellCoords :: MSCellCoord -> [MSCellCoord]
-getAdjCellCoords MSCellCoord {..} =
-  let isInBoard (MSCellCoord cx' cy') = cx' >= 0 && cx' <= 9 && cy' >= 0 && cy' <= 9
+getAdjCellCoords :: MSSettings -> MSCellCoord -> [MSCellCoord]
+getAdjCellCoords MSSettings {..} MSCellCoord {..} =
+  let isInBoard (MSCellCoord cx' cy') =
+        cx' >= 0
+          && cx' <= colCount
+          && cy' >= 0
+          && cy' <= rowCount
    in filter
         isInBoard
         [ MSCellCoord (cx - 1) (cy - 1),
@@ -148,10 +163,10 @@ countHiddenBlank board = length (filter keepHiddenBlank (Map.elems board))
     keepHiddenBlank (MSCell (Blank _) Hidden) = True
     keepHiddenBlank _ = False
 
-openAdjBlank0Cells :: MSCellCoord -> MSBoard -> MSBoard
-openAdjBlank0Cells cellCoord board =
+openAdjBlank0Cells :: MSSettings -> MSCellCoord -> MSBoard -> MSBoard
+openAdjBlank0Cells settings cellCoord board =
   if isBlank0Cell cellCoord board
-    then openCells (getAdjCellCoords cellCoord) board
+    then openCells (getAdjCellCoords settings cellCoord) board
     else board
   where
     openCells :: [MSCellCoord] -> MSBoard -> MSBoard
@@ -161,7 +176,7 @@ openAdjBlank0Cells cellCoord board =
       (x : xs) -> openCells xs $ openCell' x b
     openCell' coord b =
       if isHiddenCell coord b
-        then let nb = openCell coord b in openAdjBlank0Cells coord nb
+        then let nb = openCell coord b in openAdjBlank0Cells settings coord nb
         else b
 
 data ServiceEvent = StartTimer UTCTime | StopTimer deriving (Show)
@@ -178,8 +193,8 @@ mineSweeperApp = do
       }
   where
     appGenState = do
-      board <- initBoard
-      pure $ MSState board Wait
+      board <- initBoard defaultSettings
+      pure $ MSState board Wait defaultSettings
 
 diffTimeToFloat :: UTCTime -> UTCTime -> Float
 diffTimeToFloat a b = realToFrac $ diffUTCTime a b
@@ -230,14 +245,18 @@ handleEvent wEv appStateV serviceQ = do
         True -> do
           (board, panel) <- atomically $ do
             writeTBQueue serviceQ StopTimer
-            writeTVar appStateV $ MSState (openCell cellCoord appState.board) Gameover
+            modifyTVar' appStateV $ \s ->
+              s
+                { board = openCell cellCoord appState.board,
+                  state = Gameover
+                }
             board <- renderBoard appStateV
             panel <- renderPanel appStateV (Just playDuration)
             pure (board, panel)
           pure [board, panel]
         False -> do
           let gs1 = openCell cellCoord appState.board
-              gs2 = openAdjBlank0Cells cellCoord gs1
+              gs2 = openAdjBlank0Cells appState.settings cellCoord gs1
           case countHiddenBlank gs2 == 0 of
             True -> do
               (board, panel) <- atomically $ do
@@ -254,9 +273,10 @@ handleEvent wEv appStateV serviceQ = do
                 pure (board, smiley)
               pure [board, smiley]
     Just (NewGame) -> do
-      newBoard <- initBoard
+      appState <- readTVarIO appStateV
+      newBoard <- initBoard appState.settings
       app <- atomically $ do
-        writeTVar appStateV $ MSState newBoard Wait
+        modifyTVar' appStateV $ \s -> s {board = newBoard, state = Wait}
         writeTBQueue serviceQ StopTimer
         renderApp appStateV
       pure [app]
@@ -294,12 +314,16 @@ renderApp appStateV = do
 renderPanel :: TVar MSState -> Maybe Float -> STM (Html ())
 renderPanel appStateV durationM = do
   smiley <- renderSmiley appStateV
+  appState <- readTVar appStateV
   pure $ div_ [id_ "MSPanel", class_ "bg-gray-200 m-1 flex justify-between"] $ do
-    div_ [class_ "w-10"] "9 💣"
+    div_ [class_ "w-10"] $ toHtml $ mineLabel appState.settings.mineCount
     smiley
     case durationM of
       Just duration -> renderTimer duration
       _ -> pure ()
+  where
+    mineLabel :: Int -> Text
+    mineLabel count = (from $ show count) <> " 💣"
 
 renderSmiley :: TVar MSState -> STM (Html ())
 renderSmiley appStateV = do
@@ -321,7 +345,8 @@ renderTimer duration = do
 renderBoard :: TVar MSState -> STM (Html ())
 renderBoard appStateV = do
   appState <- readTVar appStateV
-  pure $ div_ [id_ "MSBoard", class_ "grid grid-cols-10 gap-1"] $ do
+  let gridType = "grid-cols-" <> show (appState.settings.colCount + 1)
+  pure $ div_ [id_ "MSBoard", class_ $ "grid gap-1 " <> from gridType] $ do
     mapM_ (renderCell appState.state) $ Map.toList appState.board
   where
     renderCell :: MSGameState -> (MSCellCoord, MSCell) -> Html ()
