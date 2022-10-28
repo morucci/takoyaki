@@ -5,7 +5,7 @@ module Demo.MineSweeper where
 
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM
-import Control.Monad (forever)
+import Control.Monad (forever, void)
 import qualified Data.Map as Map
 import Data.Text (pack)
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
@@ -176,7 +176,7 @@ mineSweeperApp = do
         appGenState,
         appRender = renderApp,
         appHandleEvent = handleEvent,
-        appService = serviceThread
+        appService = const $ serviceThread
       }
   where
     appGenState = do
@@ -186,26 +186,34 @@ mineSweeperApp = do
 diffTimeToFloat :: UTCTime -> UTCTime -> Float
 diffTimeToFloat a b = realToFrac $ diffUTCTime a b
 
-serviceThread :: TVar MSState -> TBQueue ServiceEvent -> WS.Connection -> IO ()
-serviceThread _appStateV serviceQ conn = do
+serviceThread :: TBQueue ServiceEvent -> WS.Connection -> IO ()
+serviceThread serviceQ conn = do
   timerState <- newTVarIO Nothing
   Ki.scoped $ \scope -> do
     Ki.fork_ scope $ forever $ do
-      atomically $ do
-        event <- readTBQueue serviceQ
-        case event of
-          StartTimer atTime -> writeTVar timerState (Just atTime)
-          StopTimer -> writeTVar timerState Nothing
-    Ki.fork_ scope $ forever $ do
-      ts <- readTVarIO timerState
-      case ts of
-        Just atTime -> do
-          now <- getCurrentTime
-          let diffT = diffTimeToFloat now atTime
-          WS.sendTextData conn $ renderBS $ renderTimer diffT
-        Nothing -> pure ()
-      threadDelay 500000
+      event <- atomically $ readTBQueue serviceQ
+      case event of
+        StartTimer atTime -> do
+          atomically $ writeTVar timerState $ Just atTime
+          void $ Ki.fork scope $ timerT timerState
+        StopTimer -> atomically $ writeTVar timerState Nothing
     atomically $ Ki.awaitAll scope
+  where
+    timerT :: TVar (Maybe UTCTime) -> IO ()
+    timerT timerState = go
+      where
+        go = do
+          ts <- readTVarIO timerState
+          case ts of
+            Just atTime -> do
+              now <- getCurrentTime
+              WS.sendTextData conn
+                . renderBS
+                . renderTimer
+                $ diffTimeToFloat now atTime
+              threadDelay 500000
+              go
+            Nothing -> pure ()
 
 wSEvent :: WSEvent -> IO (Maybe MSEvent)
 wSEvent (WSEvent wseName _ wseData) = case wseName of
