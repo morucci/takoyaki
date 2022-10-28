@@ -56,10 +56,8 @@ data MSCellCoord = MSCellCoord
 type MSBoard = Map.Map MSCellCoord MSCell
 
 data MSEvent
-  = NewGame MSBoard
-  | OpenCell MSCellCoord UTCTime
-  | UpdateTimer Float
-  deriving (Show)
+  = NewGame
+  | OpenCell MSCellCoord
 
 initBoard :: IO MSBoard
 initBoard = do
@@ -215,31 +213,11 @@ serviceThread serviceQ conn = do
               go
             Nothing -> pure ()
 
-wSEvent :: WSEvent -> IO (Maybe MSEvent)
-wSEvent (WSEvent wseName _ wseData) = case wseName of
-  "showCell" -> do
-    case (getData "cx", getData "cy") of
-      (Just (Just cxS), Just (Just cyS)) -> do
-        let cxM = readMaybe $ from cxS :: Maybe Int
-            cyM = readMaybe $ from cyS :: Maybe Int
-        case (cxM, cyM) of
-          (Just cx, Just cy) -> do
-            now <- getCurrentTime
-            pure . Just $ OpenCell (MSCellCoord cx cy) now
-          _ -> pure Nothing
-      _ -> pure Nothing
-  "play" -> do
-    newBoard <- initBoard
-    pure $ Just $ NewGame newBoard
-  _ -> pure Nothing
-  where
-    getData = flip Map.lookup wseData
-
 handleEvent :: WSEvent -> TVar MSState -> TBQueue ServiceEvent -> IO [Html ()]
 handleEvent wEv appStateV serviceQ = do
-  evM <- wSEvent wEv
-  case evM of
-    Just (OpenCell cellCoord atTime) -> do
+  case wSEvent wEv of
+    Just (OpenCell cellCoord) -> do
+      atTime <- getCurrentTime
       appState' <- readTVarIO appStateV
       case appState'.state of
         Wait -> atomically $ do
@@ -275,7 +253,8 @@ handleEvent wEv appStateV serviceQ = do
                 smiley <- renderSmiley appStateV
                 pure (board, smiley)
               pure [board, smiley]
-    Just (NewGame newBoard) -> do
+    Just (NewGame) -> do
+      newBoard <- initBoard
       app <- atomically $ do
         writeTVar appStateV $ MSState newBoard Wait
         writeTBQueue serviceQ StopTimer
@@ -287,6 +266,22 @@ handleEvent wEv appStateV serviceQ = do
     mkPlayDuration s curD = case s of
       Play startDate -> diffTimeToFloat curD startDate
       _ -> error "Should not happen"
+    wSEvent :: WSEvent -> Maybe MSEvent
+    wSEvent (WSEvent wseName _ wseData) = do
+      let getData = flip Map.lookup wseData
+      case wseName of
+        "showCell" -> do
+          case (getData "cx", getData "cy") of
+            (Just (Just cxS), Just (Just cyS)) -> do
+              let cxM = readMaybe $ from cxS :: Maybe Int
+                  cyM = readMaybe $ from cyS :: Maybe Int
+              case (cxM, cyM) of
+                (Just cx, Just cy) -> Just $ OpenCell (MSCellCoord cx cy)
+                _ -> Nothing
+            _ -> Nothing
+        "play" -> do
+          Just $ NewGame
+        _ -> Nothing
 
 renderApp :: TVar MSState -> STM (Html ())
 renderApp appStateV = do
