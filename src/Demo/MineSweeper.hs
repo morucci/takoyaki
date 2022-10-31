@@ -7,7 +7,7 @@ import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM
 import Control.Monad (forever, void)
 import qualified Data.Map as Map
-import Data.Text (Text, pack)
+import Data.Text (Text, intercalate, pack)
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
 import GHC.Generics (Generic)
 import qualified Ki
@@ -345,8 +345,9 @@ renderTimer duration = do
 renderBoard :: TVar MSState -> STM (Html ())
 renderBoard appStateV = do
   appState <- readTVar appStateV
-  let gridType = "grid-cols-" <> show (appState.settings.colCount + 1)
-  pure $ div_ [id_ "MSBoard", class_ $ "grid gap-1 " <> from gridType] $ do
+
+  let gridType = "grid-cols-[" <> (intercalate "_" $ Prelude.replicate (appState.settings.colCount + 1) "20px") <> "]"
+  pure $ div_ [id_ "MSBoard", class_ $ "grid gap-1 " <> gridType] $ do
     mapM_ (renderCell appState.state) $ Map.toList appState.board
   where
     renderCell :: MSGameState -> (MSCellCoord, MSCell) -> Html ()
