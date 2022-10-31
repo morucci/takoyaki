@@ -29,8 +29,7 @@ data MSState = MSState
   deriving (Show)
 
 data MSSettings = MSSettings
-  { rowCount :: Int,
-    colCount :: Int,
+  { sizeCount :: Int, -- Board to be size^2
     mineCount :: Int
   }
   deriving (Show)
@@ -68,11 +67,11 @@ data MSEvent
   | OpenCell MSCellCoord
 
 defaultSettings :: MSSettings
-defaultSettings = MSSettings 9 9 9
+defaultSettings = MSSettings 9 9
 
 initBoard :: MSSettings -> IO MSBoard
 initBoard settings@MSSettings {..} = do
-  let cellsCoords = [MSCellCoord x y | x <- [0 .. colCount], y <- [0 .. rowCount]]
+  let cellsCoords = [MSCellCoord x y | x <- [0 .. sizeCount], y <- [0 .. sizeCount]]
       blankBoard = Map.fromList $ map (\coord -> (coord, MSCell (Blank 0) Hidden)) cellsCoords
   minesCoords <- getMinesCoords cellsCoords []
   pure $ setBoard blankBoard minesCoords
@@ -118,9 +117,9 @@ getAdjCellCoords :: MSSettings -> MSCellCoord -> [MSCellCoord]
 getAdjCellCoords MSSettings {..} MSCellCoord {..} =
   let isInBoard (MSCellCoord cx' cy') =
         cx' >= 0
-          && cx' <= colCount
+          && cx' <= sizeCount
           && cy' >= 0
-          && cy' <= rowCount
+          && cy' <= sizeCount
    in filter
         isInBoard
         [ MSCellCoord (cx - 1) (cy - 1),
@@ -346,7 +345,7 @@ renderBoard :: TVar MSState -> STM (Html ())
 renderBoard appStateV = do
   appState <- readTVar appStateV
 
-  let gridType = "grid-cols-[" <> (intercalate "_" $ Prelude.replicate (appState.settings.colCount + 1) "20px") <> "]"
+  let gridType = "grid-cols-[" <> (intercalate "_" $ Prelude.replicate (appState.settings.sizeCount + 1) "20px") <> "]"
   pure $ div_ [id_ "MSBoard", class_ $ "grid gap-1 " <> gridType] $ do
     mapM_ (renderCell appState.state) $ Map.toList appState.board
   where
