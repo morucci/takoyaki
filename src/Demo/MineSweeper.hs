@@ -66,8 +66,18 @@ data MSEvent
   = NewGame
   | OpenCell MSCellCoord
 
-defaultSettings :: MSSettings
-defaultSettings = MSSettings 9 9
+data MSLevel = Baby | Beginner | Intermediate | Expert | Impossible
+
+defaultLevel :: MSLevel
+defaultLevel = Beginner
+
+levelToSettings :: MSLevel -> MSSettings
+levelToSettings level = case level of
+  Baby -> MSSettings 6 3
+  Beginner -> MSSettings 9 9
+  Intermediate -> MSSettings 15 30
+  Expert -> MSSettings 20 75
+  Impossible -> MSSettings 20 150
 
 initBoard :: MSSettings -> IO MSBoard
 initBoard settings@MSSettings {..} = do
@@ -192,8 +202,8 @@ mineSweeperApp = do
       }
   where
     appGenState = do
-      board <- initBoard defaultSettings
-      pure $ MSState board Wait defaultSettings
+      board <- initBoard $ levelToSettings defaultLevel
+      pure $ MSState board Wait $ levelToSettings defaultLevel
 
 diffTimeToFloat :: UTCTime -> UTCTime -> Float
 diffTimeToFloat a b = realToFrac $ diffUTCTime a b
@@ -259,6 +269,7 @@ handleEvent wEv appStateV serviceQ = do
           case countHiddenBlank gs2 == 0 of
             True -> do
               (board, panel) <- atomically $ do
+                writeTBQueue serviceQ StopTimer
                 modifyTVar' appStateV $ \s -> s {board = gs2, state = Win}
                 board <- renderBoard appStateV
                 panel <- renderPanel appStateV (Just playDuration)
@@ -315,7 +326,7 @@ renderPanel appStateV durationM = do
   smiley <- renderSmiley appStateV
   appState <- readTVar appStateV
   pure $ div_ [id_ "MSPanel", class_ "bg-gray-200 m-1 flex justify-between"] $ do
-    div_ [class_ "w-10"] $ toHtml $ mineLabel appState.settings.mineCount
+    div_ [class_ "w-12"] $ toHtml $ mineLabel appState.settings.mineCount
     smiley
     case durationM of
       Just duration -> renderTimer duration
