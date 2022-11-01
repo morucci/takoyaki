@@ -306,7 +306,7 @@ renderApp :: TVar MSState -> STM (Html ())
 renderApp appStateV = do
   panel <- renderPanel appStateV (Just 0.0)
   board <- renderBoard appStateV
-  pure $ div_ [id_ "MSMain", class_ "w-60 border-2 border-gray-400 bg-gray-100"] $ do
+  pure $ div_ [id_ "MSMain", class_ "min-w-fit max-w-fit border-2 border-gray-400 bg-gray-100"] $ do
     panel
     board
 
