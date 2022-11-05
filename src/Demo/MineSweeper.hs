@@ -65,8 +65,24 @@ type MSBoard = Map.Map MSCellCoord MSCell
 data MSEvent
   = NewGame
   | OpenCell MSCellCoord
+  | LevelSelected MSLevel
 
-data MSLevel = Baby | Beginner | Intermediate | Expert | Impossible
+data MSLevel
+  = Baby
+  | Beginner
+  | Intermediate
+  | Expert
+  | Impossible
+  deriving (Bounded, Enum, Show)
+
+instance From Text MSLevel where
+  from txt = case txt of
+    "Baby" -> Baby
+    "Beginner" -> Beginner
+    "Intermediate" -> Intermediate
+    "Expert" -> Expert
+    "Impossible" -> Impossible
+    _ -> error "Unhandled level"
 
 defaultLevel :: MSLevel
 defaultLevel = Beginner
@@ -282,15 +298,20 @@ handleEvent wEv appStateV serviceQ = do
                 smiley <- renderSmiley appStateV
                 pure (board, smiley)
               pure [board, smiley]
-    Just (NewGame) -> do
-      appState <- readTVarIO appStateV
-      newBoard <- initBoard appState.settings
-      app <- atomically $ do
-        modifyTVar' appStateV $ \s -> s {board = newBoard, state = Wait}
+    Just NewGame -> do
+      frags <- atomically $ do
         writeTBQueue serviceQ StopTimer
+        panel <- renderPanel appStateV (Just 0.0)
+        pure [panel, renderLevelsSelector]
+      pure frags
+    Just (LevelSelected level) -> do
+      let settings = levelToSettings level
+      newBoard <- initBoard settings
+      app <- atomically $ do
+        modifyTVar' appStateV $ \s -> s {board = newBoard, state = Wait, settings}
         renderApp appStateV
       pure [app]
-    _ -> pure []
+    Nothing -> pure []
   where
     mkPlayDuration :: MSGameState -> UTCTime -> Float
     mkPlayDuration s curD = case s of
@@ -309,8 +330,11 @@ handleEvent wEv appStateV serviceQ = do
                 (Just cx, Just cy) -> Just $ OpenCell (MSCellCoord cx cy)
                 _ -> Nothing
             _ -> Nothing
-        "play" -> do
-          Just $ NewGame
+        "play" -> Just NewGame
+        "levelSelected" -> do
+          case getData "level" of
+            Just (Just level) -> Just $ LevelSelected (from level)
+            _ -> Nothing
         _ -> Nothing
 
 renderApp :: TVar MSState -> STM (Html ())
@@ -351,6 +375,23 @@ renderTimer :: Float -> Html ()
 renderTimer duration = do
   let durationT = printf "%.1f" duration :: String
   div_ [id_ "MSTimer", class_ "w-10 text-right"] $ toHtml durationT
+
+renderLevelsSelector :: Html ()
+renderLevelsSelector = do
+  div_ [id_ "MSBoard", class_ "bg-gray-100 w-64 flex flex-col items-center gap-px"] $ do
+    label_ "Select a level"
+    mapM_ (div_ . levelButton) [minBound .. maxBound]
+  where
+    levelButton :: MSLevel -> Html ()
+    levelButton level = do
+      let button = button_ [class_ "m-1 w-32 bg-gray-200 text-center cursor-pointer"] . toHtml $ show level
+      withEvent "levelSelected" [mkHxVals [("level", from $ show level)]] $ do
+        case level of
+          Baby -> div_ [class_ "text-blue-700"] button
+          Beginner -> div_ [class_ "text-blue-800"] button
+          Intermediate -> div_ [class_ "text-green-700"] button
+          Expert -> div_ [class_ "text-red-700"] button
+          Impossible -> div_ [class_ "text-black-700"] button
 
 renderBoard :: TVar MSState -> STM (Html ())
 renderBoard appStateV = do
