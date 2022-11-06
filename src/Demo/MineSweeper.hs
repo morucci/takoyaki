@@ -405,7 +405,7 @@ renderSmiley appStateV = do
   pure $
     div_ [id_ "MSSmiley"] $
       withEvent "play" [] $
-        div_ [class_ "bg-gray-300 border-2 cursor-pointer"] $ case appState.state of
+        div_ [class_ "cursor-pointer"] $ case appState.state of
           Play _ _ -> "🙂"
           Wait -> "😴"
           Gameover -> "😖"
