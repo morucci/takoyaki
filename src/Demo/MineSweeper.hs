@@ -35,7 +35,7 @@ data MSSettings = MSSettings
   deriving (Show)
 
 data MSGameState
-  = Play UTCTime
+  = Play UTCTime Bool
   | Win
   | Gameover
   | Wait
@@ -46,7 +46,7 @@ data MSCellContent
   | Blank Int
   deriving (Show)
 
-data MSCellStatus = Open | Hidden deriving (Show)
+data MSCellStatus = Open | Hidden Bool deriving (Show)
 
 data MSCell = MSCell
   { cellContent :: MSCellContent,
@@ -64,8 +64,9 @@ type MSBoard = Map.Map MSCellCoord MSCell
 
 data MSEvent
   = NewGame
-  | OpenCell MSCellCoord
+  | ClickCell MSCellCoord
   | LevelSelected MSLevel
+  | SetFlagMode
 
 data MSLevel
   = Baby
@@ -98,7 +99,7 @@ levelToSettings level = case level of
 initBoard :: MSSettings -> IO MSBoard
 initBoard settings@MSSettings {..} = do
   let cellsCoords = [MSCellCoord x y | x <- [0 .. sizeCount], y <- [0 .. sizeCount]]
-      blankBoard = Map.fromList $ map (\coord -> (coord, MSCell (Blank 0) Hidden)) cellsCoords
+      blankBoard = Map.fromList $ map (\coord -> (coord, MSCell (Blank 0) (Hidden False))) cellsCoords
   minesCoords <- getMinesCoords cellsCoords []
   pure $ setBoard blankBoard minesCoords
   where
@@ -120,8 +121,8 @@ initBoard settings@MSSettings {..} = do
         installMines :: MSBoard -> [MSCellCoord] -> MSBoard
         installMines b cs = case cs of
           [] -> b
-          [x] -> Map.insert x (MSCell Mine Hidden) b
-          (x : xs) -> installMines (Map.insert x (MSCell Mine Hidden) b) (xs)
+          [x] -> Map.insert x (MSCell Mine (Hidden False)) b
+          (x : xs) -> installMines (Map.insert x (MSCell Mine (Hidden False)) b) (xs)
         installAdjCells :: MSBoard -> [MSCellCoord] -> MSBoard
         installAdjCells b cs = case cs of
           [] -> b
@@ -136,7 +137,7 @@ initBoard settings@MSSettings {..} = do
                   other -> other
             )
             c
-            (MSCell (Blank 1) Hidden)
+            (MSCell (Blank 1) (Hidden False))
             b
 
 getAdjCellCoords :: MSSettings -> MSCellCoord -> [MSCellCoord]
@@ -164,6 +165,13 @@ openCell cellCoord board = Map.update func cellCoord board
     func :: MSCell -> Maybe MSCell
     func (MSCell content _) = Just $ MSCell content Open
 
+setFlagOnCell :: MSCellCoord -> MSBoard -> MSBoard
+setFlagOnCell cellCoord board = Map.update func cellCoord board
+  where
+    func :: MSCell -> Maybe MSCell
+    func (MSCell content (Hidden flagState)) = Just $ MSCell content (Hidden (not flagState))
+    func cell = Just cell
+
 getCell :: MSCellCoord -> MSBoard -> Maybe MSCell
 getCell = Map.lookup
 
@@ -174,7 +182,7 @@ isBlank0Cell cellCoord board = case getCell cellCoord board of
 
 isHiddenCell :: MSCellCoord -> MSBoard -> Bool
 isHiddenCell cellCoord board = case getCell cellCoord board of
-  Just (MSCell _ Hidden) -> True
+  Just (MSCell _ (Hidden False)) -> True
   _ -> False
 
 isMineCell :: MSCellCoord -> MSBoard -> Bool
@@ -185,7 +193,7 @@ isMineCell cellCoord board = case getCell cellCoord board of
 countHiddenBlank :: MSBoard -> Int
 countHiddenBlank board = length (filter keepHiddenBlank (Map.elems board))
   where
-    keepHiddenBlank (MSCell (Blank _) Hidden) = True
+    keepHiddenBlank (MSCell (Blank _) (Hidden False)) = True
     keepHiddenBlank _ = False
 
 openAdjBlank0Cells :: MSSettings -> MSCellCoord -> MSBoard -> MSBoard
@@ -256,48 +264,58 @@ serviceThread serviceQ conn = do
 handleEvent :: WSEvent -> TVar MSState -> TBQueue ServiceEvent -> IO [Html ()]
 handleEvent wEv appStateV serviceQ = do
   case wSEvent wEv of
-    Just (OpenCell cellCoord) -> do
+    Just (ClickCell cellCoord) -> do
       atTime <- getCurrentTime
       appState' <- readTVarIO appStateV
       case appState'.state of
         Wait -> atomically $ do
-          modifyTVar' appStateV $ \s -> s {state = Play atTime}
+          modifyTVar' appStateV $ \s -> s {state = Play atTime False}
           writeTBQueue serviceQ (StartTimer atTime)
         _ -> pure ()
       appState <- readTVarIO appStateV
-      let playDuration = mkPlayDuration appState.state atTime
-      case isMineCell cellCoord appState.board of
-        True -> do
-          (board, panel) <- atomically $ do
-            writeTBQueue serviceQ StopTimer
-            modifyTVar' appStateV $ \s ->
-              s
-                { board = openCell cellCoord appState.board,
-                  state = Gameover
-                }
-            board <- renderBoard appStateV
-            panel <- renderPanel appStateV (Just playDuration)
-            pure (board, panel)
-          pure [board, panel]
-        False -> do
-          let gs1 = openCell cellCoord appState.board
-              gs2 = openAdjBlank0Cells appState.settings cellCoord gs1
-          case countHiddenBlank gs2 == 0 of
+      case appState.state of
+        Play _ False -> do
+          let playDuration = mkPlayDuration appState.state atTime
+          case isMineCell cellCoord appState.board of
             True -> do
               (board, panel) <- atomically $ do
                 writeTBQueue serviceQ StopTimer
-                modifyTVar' appStateV $ \s -> s {board = gs2, state = Win}
+                modifyTVar' appStateV $ \s ->
+                  s
+                    { board = openCell cellCoord appState.board,
+                      state = Gameover
+                    }
                 board <- renderBoard appStateV
                 panel <- renderPanel appStateV (Just playDuration)
                 pure (board, panel)
               pure [board, panel]
             False -> do
-              (board, smiley) <- atomically $ do
-                modifyTVar' appStateV $ \s -> s {board = gs2}
-                board <- renderBoard appStateV
-                smiley <- renderSmiley appStateV
-                pure (board, smiley)
-              pure [board, smiley]
+              let gs1 = openCell cellCoord appState.board
+                  gs2 = openAdjBlank0Cells appState.settings cellCoord gs1
+              case countHiddenBlank gs2 == 0 of
+                True -> do
+                  (board, panel) <- atomically $ do
+                    writeTBQueue serviceQ StopTimer
+                    modifyTVar' appStateV $ \s -> s {board = gs2, state = Win}
+                    board <- renderBoard appStateV
+                    panel <- renderPanel appStateV (Just playDuration)
+                    pure (board, panel)
+                  pure [board, panel]
+                False -> do
+                  (board, smiley) <- atomically $ do
+                    modifyTVar' appStateV $ \s -> s {board = gs2}
+                    board <- renderBoard appStateV
+                    smiley <- renderSmiley appStateV
+                    pure (board, smiley)
+                  pure [board, smiley]
+        Play st True -> do
+          atomically $ do
+            let board = setFlagOnCell cellCoord appState.board
+            modifyTVar' appStateV $ \s -> s {state = Play st False, board}
+            flag <- renderFlag appStateV
+            board' <- renderBoard appStateV
+            pure [flag, board']
+        _ -> pure []
     Just NewGame -> do
       frags <- atomically $ do
         writeTBQueue serviceQ StopTimer
@@ -311,23 +329,32 @@ handleEvent wEv appStateV serviceQ = do
         modifyTVar' appStateV $ \s -> s {board = newBoard, state = Wait, settings}
         renderApp appStateV
       pure [app]
+    Just SetFlagMode -> do
+      frags <- atomically $ do
+        appState <- readTVar appStateV
+        case appState.state of
+          Play st fm -> do
+            modifyTVar' appStateV $ \s -> s {state = Play st (not fm)}
+            renderFlag appStateV
+          _ -> pure $ pure ()
+      pure [frags]
     Nothing -> pure []
   where
     mkPlayDuration :: MSGameState -> UTCTime -> Float
     mkPlayDuration s curD = case s of
-      Play startDate -> diffTimeToFloat curD startDate
+      Play startDate _ -> diffTimeToFloat curD startDate
       _ -> error "Should not happen"
     wSEvent :: WSEvent -> Maybe MSEvent
     wSEvent (WSEvent wseName _ wseData) = do
       let getData = flip Map.lookup wseData
       case wseName of
-        "showCell" -> do
+        "clickCell" -> do
           case (getData "cx", getData "cy") of
             (Just (Just cxS), Just (Just cyS)) -> do
               let cxM = readMaybe $ from cxS :: Maybe Int
                   cyM = readMaybe $ from cyS :: Maybe Int
               case (cxM, cyM) of
-                (Just cx, Just cy) -> Just $ OpenCell (MSCellCoord cx cy)
+                (Just cx, Just cy) -> Just $ ClickCell (MSCellCoord cx cy)
                 _ -> Nothing
             _ -> Nothing
         "play" -> Just NewGame
@@ -335,6 +362,7 @@ handleEvent wEv appStateV serviceQ = do
           case getData "level" of
             Just (Just level) -> Just $ LevelSelected (from level)
             _ -> Nothing
+        "setFlagMode" -> Just SetFlagMode
         _ -> Nothing
 
 renderApp :: TVar MSState -> STM (Html ())
@@ -348,16 +376,27 @@ renderApp appStateV = do
 renderPanel :: TVar MSState -> Maybe Float -> STM (Html ())
 renderPanel appStateV durationM = do
   smiley <- renderSmiley appStateV
+  flag <- renderFlag appStateV
   appState <- readTVar appStateV
   pure $ div_ [id_ "MSPanel", class_ "bg-gray-200 m-1 flex justify-between"] $ do
     div_ [class_ "w-12"] $ toHtml $ mineLabel appState.settings.mineCount
     smiley
+    flag
     case durationM of
       Just duration -> renderTimer duration
       _ -> pure ()
   where
     mineLabel :: Int -> Text
     mineLabel count = (from $ show count) <> " 💣"
+
+renderFlag :: TVar MSState -> STM (Html ())
+renderFlag appStateV = do
+  appState <- readTVar appStateV
+  let flagMode = case appState.state of
+        Play _ True -> "bg-red-200"
+        _ -> mempty
+  pure $ div_ [id_ "MSFlag"] $ do
+    withEvent "setFlagMode" [] $ div_ [class_ ("cursor-pointer " <> flagMode)] "🚩"
 
 renderSmiley :: TVar MSState -> STM (Html ())
 renderSmiley appStateV = do
@@ -366,7 +405,7 @@ renderSmiley appStateV = do
     div_ [id_ "MSSmiley"] $
       withEvent "play" [] $
         div_ [class_ "bg-gray-300 border-2 cursor-pointer"] $ case appState.state of
-          Play _ -> "🙂"
+          Play _ _ -> "🙂"
           Wait -> "😴"
           Gameover -> "😖"
           Win -> "😎"
@@ -419,15 +458,16 @@ renderBoard appStateV = do
                   | v == 8 -> div_ [class_ "bg-gray-200 font-bold text-black-700"] $ showCellValue v
                 MSCell (Blank _) Open -> error "Impossible case"
                 MSCell Mine Open -> div_ [class_ "bg-red-500"] "💣"
-                MSCell _ Hidden -> div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] ""
+                MSCell _ (Hidden True) -> div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] "🚩"
+                MSCell _ (Hidden False) -> div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] ""
       where
         showCellValue :: Int -> Html ()
         showCellValue = toHtml . show
         installCellEvent :: MSGameState -> Attribute -> Html () -> Html ()
         installCellEvent gs cellId elm =
-          let elm' = withEvent "showCell" [cellId] elm
+          let elm' = withEvent "clickCell" [cellId] elm
            in case gs of
-                Play _ -> elm'
+                Play _ _ -> elm'
                 Wait -> elm'
                 _ -> elm
 
