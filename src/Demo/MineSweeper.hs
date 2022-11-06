@@ -380,8 +380,9 @@ renderPanel appStateV durationM = do
   appState <- readTVar appStateV
   pure $ div_ [id_ "MSPanel", class_ "bg-gray-200 m-1 flex justify-between"] $ do
     div_ [class_ "w-12"] $ toHtml $ mineLabel appState.settings.mineCount
-    smiley
-    flag
+    div_ [class_ "flex flex-row gap-2"] $ do
+      smiley
+      flag
     case durationM of
       Just duration -> renderTimer duration
       _ -> pure ()
