@@ -41,6 +41,8 @@ library
                     , servant-server
                     , servant-websockets
                     , servant-xstatic
+                    , servant-auth-server
+                    , cookie
                     , lucid
                     , lucid-xstatic
                     , string-interpolate

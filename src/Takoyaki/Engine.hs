@@ -9,9 +9,11 @@ where
 
 import Control.Concurrent.STM
 import Control.Monad (forever, void)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.String.Interpolate (i)
 import Data.Text (Text)
+import Data.Text.Encoding (encodeUtf8)
+import Data.UUID (UUID, fromASCIIBytes)
 import qualified Ki
 import Lucid (Attribute, Html, ToHtml (toHtml), With (with), renderBS)
 import Lucid.Html5
@@ -20,9 +22,13 @@ import qualified Network.Wai.Handler.Warp as Warp
 import qualified Network.WebSockets as WS
 import Servant
 import Servant.API.WebSocket (WebSocket)
+import Servant.Auth.Server (SetCookie)
 import Servant.HTML.Lucid (HTML)
 import Servant.XStatic (xstaticServant)
+import System.Random (randomIO)
 import Takoyaki.Htmx
+import Web.Cookie (SetCookie (..), defaultSetCookie, parseCookies, sameSiteLax)
+import Witch
 import qualified XStatic.Tailwind as XStatic
 import Prelude
 
@@ -60,26 +66,53 @@ connectionHandler app conn = liftIO $ do
 withEvent :: TriggerId -> [Attribute] -> Html () -> Html ()
 withEvent tId tAttrs elm = with elm ([id_ tId, wsSend ""] <> tAttrs)
 
-bootHandler :: Text -> Html ()
-bootHandler title = do
-  doctypehtml_ $ do
-    head_ $ do
-      title_ $ (toHtml title)
-      meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"]
-      xstaticScripts $ xStaticFiles <> [XStatic.tailwind]
-    body_ $ do
-      div_ [class_ "container mx-auto", hxExtWS, wsConnect "/ws"] $
-        div_ [id_ "init"] ""
+bootHandler :: Text -> Maybe Text -> Handler (Headers '[Header "Set-Cookie" SetCookie] (Html ()))
+bootHandler title cookieHeaderM = do
+  sessionUUID <- case getSessionUUID of
+    Just uuid -> pure uuid
+    Nothing -> liftIO genUUID
+  pure $ do
+    withSetCookie sessionUUID $ doctypehtml_ $ do
+      head_ $ do
+        title_ $ (toHtml title)
+        meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"]
+        xstaticScripts $ xStaticFiles <> [XStatic.tailwind]
+      body_ $ do
+        div_ [class_ "container mx-auto", hxExtWS, wsConnect "/ws"] $
+          div_ [id_ "init"] ""
+  where
+    cookieName = "sessionUUID"
+    genUUID :: MonadIO m => m UUID
+    genUUID = randomIO
+    withSetCookie :: UUID -> Html () -> Headers '[Header "Set-Cookie" SetCookie] (Html ())
+    withSetCookie uuid =
+      let cookie =
+            defaultSetCookie
+              { setCookieName = cookieName,
+                setCookieValue = encodeUtf8 . from $ show uuid,
+                setCookieSameSite = Just sameSiteLax,
+                setCookieHttpOnly = True
+              }
+       in addHeader cookie
+    getSessionUUID :: Maybe UUID
+    getSessionUUID = do
+      let parsedCookies = (parseCookies . encodeUtf8) <$> (cookieHeaderM)
+      case parsedCookies of
+        Just cookies -> case filter (\(k, _) -> k == cookieName) cookies of
+          [] -> Nothing
+          [x] -> fromASCIIBytes $ snd x
+          (_ : _) -> Nothing -- More than on cookie found so consider nothing
+        Nothing -> Nothing
 
 type API =
   "xstatic" :> Raw
-    :<|> Get '[HTML] (Html ())
+    :<|> Header "Cookie" Text :> Get '[HTML] (Headers '[Header "Set-Cookie" SetCookie] (Html ()))
     :<|> "ws" :> WebSocket
 
 appServer :: App s se -> Server API
 appServer app =
   xstaticServant (xStaticFiles <> [XStatic.tailwind])
-    :<|> pure (bootHandler app.appName)
+    :<|> bootHandler app.appName
     :<|> connectionHandler app
 
 runServer :: App s se -> IO ()
