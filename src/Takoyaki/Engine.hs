@@ -40,10 +40,10 @@ data App s se = App
     appService :: TVar s -> TBQueue se -> WS.Connection -> IO ()
   }
 
-connectionHandler :: App s se -> WS.Connection -> Handler ()
-connectionHandler app conn = liftIO $ do
+connectionHandler :: App s se -> Maybe UUID -> WS.Connection -> Handler ()
+connectionHandler app sessionUUIDM conn = liftIO $ do
   WS.withPingThread conn 5 (pure ()) $ do
-    putStrLn [i|New connection ...|]
+    putStrLn [i|New connection #{sessionUUIDM}...|]
     s <- app.appGenState
     state <- newTVarIO s
     serviceQ <- newTBQueueIO 1
@@ -78,10 +78,12 @@ bootHandler title cookieHeaderM = do
         meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"]
         xstaticScripts $ xStaticFiles <> [XStatic.tailwind]
       body_ $ do
-        div_ [class_ "container mx-auto", hxExtWS, wsConnect "/ws"] $
+        div_ [class_ "container mx-auto", hxExtWS, wsConnect $ wsPath sessionUUID] $
           div_ [id_ "init"] ""
   where
     cookieName = "sessionUUID"
+    wsPath :: UUID -> Text
+    wsPath uuid = "/ws?sessionUUID=" <> (from $ show uuid)
     genUUID :: MonadIO m => m UUID
     genUUID = randomIO
     withSetCookie :: UUID -> Html () -> Headers '[Header "Set-Cookie" SetCookie] (Html ())
@@ -101,13 +103,13 @@ bootHandler title cookieHeaderM = do
         Just cookies -> case filter (\(k, _) -> k == cookieName) cookies of
           [] -> Nothing
           [x] -> fromASCIIBytes $ snd x
-          (_ : _) -> Nothing -- More than on cookie found so consider nothing
+          (_ : _) -> Nothing -- More than one cookie found so consider nothing
         Nothing -> Nothing
 
 type API =
   "xstatic" :> Raw
     :<|> Header "Cookie" Text :> Get '[HTML] (Headers '[Header "Set-Cookie" SetCookie] (Html ()))
-    :<|> "ws" :> WebSocket
+    :<|> QueryParam "sessionUUID" UUID :> "ws" :> WebSocket
 
 appServer :: App s se -> Server API
 appServer app =
