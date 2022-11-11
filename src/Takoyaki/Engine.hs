@@ -10,6 +10,7 @@ where
 import Control.Concurrent.STM
 import Control.Monad (forever, void)
 import Control.Monad.IO.Class (MonadIO, liftIO)
+import qualified Data.Map as Map
 import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
@@ -40,12 +41,17 @@ data App s se = App
     appService :: TVar s -> TBQueue se -> WS.Connection -> IO ()
   }
 
-connectionHandler :: App s se -> Maybe UUID -> WS.Connection -> Handler ()
-connectionHandler app sessionUUIDM conn = liftIO $ do
+type SessionStateStore s = TVar (Map.Map UUID s)
+
+connectionHandler :: App s se -> SessionStateStore s -> Maybe UUID -> WS.Connection -> Handler ()
+connectionHandler _ _ Nothing _ = error "Missing session UUID"
+connectionHandler app storeV (Just sessionUUID) conn = liftIO $ do
   WS.withPingThread conn 5 (pure ()) $ do
-    putStrLn [i|New connection #{sessionUUIDM}...|]
-    s <- app.appGenState
-    state <- newTVarIO s
+    putStrLn [i|New connection #{sessionUUID}...|]
+    sM <- loadClientState sessionUUID
+    state <- case sM of
+      Nothing -> newTVarIO =<< app.appGenState
+      Just prevState -> newTVarIO prevState
     serviceQ <- newTBQueueIO 1
     appDom <- atomically $ app.appRender state
     WS.sendTextData conn . renderBS . div_ [id_ "init"] $ appDom
@@ -61,7 +67,16 @@ connectionHandler app sessionUUIDM conn = liftIO $ do
         Just wsEvent -> do
           putStrLn $ "Received WS event: " <> show wsEvent
           fragments <- app.appHandleEvent wsEvent state serviceQ
+          dumpClientState sessionUUID state
           mapM_ (WS.sendTextData conn . renderBS) fragments
+    loadClientState uuid = do
+      atomically $ do
+        store <- readTVar storeV
+        pure $ Map.lookup uuid store
+    dumpClientState uuid state = do
+      void $ liftIO $ atomically $ do
+        appState <- readTVar state
+        modifyTVar' storeV $ \store -> Map.insert uuid appState store
 
 withEvent :: TriggerId -> [Attribute] -> Html () -> Html ()
 withEvent tId tAttrs elm = with elm ([id_ tId, wsSend ""] <> tAttrs)
@@ -111,11 +126,13 @@ type API =
     :<|> Header "Cookie" Text :> Get '[HTML] (Headers '[Header "Set-Cookie" SetCookie] (Html ()))
     :<|> QueryParam "sessionUUID" UUID :> "ws" :> WebSocket
 
-appServer :: App s se -> Server API
-appServer app =
+appServer :: App s se -> SessionStateStore s -> Server API
+appServer app store =
   xstaticServant (xStaticFiles <> [XStatic.tailwind])
     :<|> bootHandler app.appName
-    :<|> connectionHandler app
+    :<|> connectionHandler app store
 
 runServer :: App s se -> IO ()
-runServer app = Warp.run 8092 $ serve (Proxy @API) $ appServer app
+runServer app = do
+  store <- newTVarIO Map.empty
+  Warp.run 8092 $ serve (Proxy @API) $ appServer app store
