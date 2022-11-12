@@ -459,7 +459,6 @@ renderLevelsSelector = do
 renderBoard :: TVar MSState -> STM (Html ())
 renderBoard appStateV = do
   appState <- readTVar appStateV
-
   let gridType = "grid-cols-[" <> (intercalate "_" $ Prelude.replicate (appState.settings.sizeCount + 1) "20px") <> "]"
   pure $ div_ [id_ "MSBoard", class_ $ "grid gap-1 " <> gridType] $ do
     mapM_ (renderCell appState.state) $ Map.toList appState.board
@@ -481,10 +480,15 @@ renderBoard appStateV = do
                   | v == 7 -> div_ [class_ "bg-gray-200 font-bold text-brown-700"] $ showCellValue v
                   | v == 8 -> div_ [class_ "bg-gray-200 font-bold text-black-700"] $ showCellValue v
                 MSCell (Blank _) Open -> error "Impossible case"
-                MSCell Mine Open -> div_ [class_ "bg-red-500"] "💣"
+                MSCell Mine Open -> mineCell
+                MSCell Mine (Hidden _) -> case gameState of
+                  Gameover -> mineCell
+                  _ -> div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] ""
                 MSCell _ (Hidden True) -> div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] "🚩"
-                MSCell _ (Hidden False) -> div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] ""
+                MSCell _ (Hidden False) -> hiddenCell
       where
+        mineCell = div_ [class_ "bg-red-500"] "💣"
+        hiddenCell = div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] ""
         showCellValue :: Int -> Html ()
         showCellValue = toHtml . show
         installCellEvent :: MSGameState -> Attribute -> Html () -> Html ()
