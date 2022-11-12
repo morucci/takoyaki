@@ -190,6 +190,11 @@ isMineCell cellCoord board = case getCell cellCoord board of
   Just (MSCell Mine _) -> True
   _ -> False
 
+isFlagCell :: MSCellCoord -> MSBoard -> Bool
+isFlagCell cellCoord board = case getCell cellCoord board of
+  Just (MSCell _ (Hidden True)) -> True
+  _ -> False
+
 countHiddenBlank :: MSBoard -> Int
 countHiddenBlank board = length (filter keepHiddenBlank (Map.elems board))
   where
@@ -291,38 +296,41 @@ handleEvent wEv appStateV serviceQ = do
       case appState.state of
         Play _ False -> do
           let playDuration = mkPlayDuration appState.state atTime
-          case isMineCell cellCoord appState.board of
-            True -> do
-              (board, panel) <- atomically $ do
-                writeTBQueue serviceQ StopTimer
-                modifyTVar' appStateV $ \s ->
-                  s
-                    { board = openCell cellCoord appState.board,
-                      state = Gameover
-                    }
-                board <- renderBoard appStateV
-                panel <- renderPanel appStateV (Just playDuration)
-                pure (board, panel)
-              pure [board, panel]
+          case isFlagCell cellCoord appState.board of
+            True -> pure []
             False -> do
-              let gs1 = openCell cellCoord appState.board
-                  gs2 = openAdjBlank0Cells appState.settings cellCoord gs1
-              case countHiddenBlank gs2 == 0 of
+              case isMineCell cellCoord appState.board of
                 True -> do
                   (board, panel) <- atomically $ do
                     writeTBQueue serviceQ StopTimer
-                    modifyTVar' appStateV $ \s -> s {board = gs2, state = Win}
+                    modifyTVar' appStateV $ \s ->
+                      s
+                        { board = openCell cellCoord appState.board,
+                          state = Gameover
+                        }
                     board <- renderBoard appStateV
                     panel <- renderPanel appStateV (Just playDuration)
                     pure (board, panel)
                   pure [board, panel]
                 False -> do
-                  (board, smiley) <- atomically $ do
-                    modifyTVar' appStateV $ \s -> s {board = gs2}
-                    board <- renderBoard appStateV
-                    smiley <- renderSmiley appStateV
-                    pure (board, smiley)
-                  pure [board, smiley]
+                  let gs1 = openCell cellCoord appState.board
+                      gs2 = openAdjBlank0Cells appState.settings cellCoord gs1
+                  case countHiddenBlank gs2 == 0 of
+                    True -> do
+                      (board, panel) <- atomically $ do
+                        writeTBQueue serviceQ StopTimer
+                        modifyTVar' appStateV $ \s -> s {board = gs2, state = Win}
+                        board <- renderBoard appStateV
+                        panel <- renderPanel appStateV (Just playDuration)
+                        pure (board, panel)
+                      pure [board, panel]
+                    False -> do
+                      (board, smiley) <- atomically $ do
+                        modifyTVar' appStateV $ \s -> s {board = gs2}
+                        board <- renderBoard appStateV
+                        smiley <- renderSmiley appStateV
+                        pure (board, smiley)
+                      pure [board, smiley]
         Play st True -> do
           atomically $ do
             let board = setFlagOnCell cellCoord appState.board
