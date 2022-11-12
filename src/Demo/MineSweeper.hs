@@ -481,14 +481,15 @@ renderBoard appStateV = do
                   | v == 8 -> div_ [class_ "bg-gray-200 font-bold text-black-700"] $ showCellValue v
                 MSCell (Blank _) Open -> error "Impossible case"
                 MSCell Mine Open -> mineCell
-                MSCell Mine (Hidden _) -> case gameState of
+                MSCell (Blank _) (Hidden True) -> flagCell
+                MSCell Mine (Hidden flag) -> case gameState of
                   Gameover -> mineCell
-                  _ -> div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] ""
-                MSCell _ (Hidden True) -> div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] "🚩"
-                MSCell _ (Hidden False) -> hiddenCell
+                  _ -> if flag then flagCell else hiddenCell
+                MSCell _ _ -> hiddenCell
       where
         mineCell = div_ [class_ "bg-red-500"] "💣"
         hiddenCell = div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] ""
+        flagCell = div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] "🚩"
         showCellValue :: Int -> Html ()
         showCellValue = toHtml . show
         installCellEvent :: MSGameState -> Attribute -> Html () -> Html ()
