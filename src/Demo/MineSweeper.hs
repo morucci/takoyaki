@@ -212,7 +212,10 @@ openAdjBlank0Cells settings cellCoord board =
         then let nb = openCell coord b in openAdjBlank0Cells settings coord nb
         else b
 
-data ServiceEvent = StartTimer UTCTime | StopTimer deriving (Show)
+data ServiceEvent
+  = StartTimer
+  | StopTimer
+  deriving (Show)
 
 mineSweeperApp :: IO (App MSState ServiceEvent)
 mineSweeperApp = do
@@ -222,7 +225,7 @@ mineSweeperApp = do
         appGenState,
         appRender = renderApp,
         appHandleEvent = handleEvent,
-        appService = const $ serviceThread
+        appService = serviceThread
       }
   where
     appGenState = do
@@ -232,15 +235,21 @@ mineSweeperApp = do
 diffTimeToFloat :: UTCTime -> UTCTime -> Float
 diffTimeToFloat a b = realToFrac $ diffUTCTime a b
 
-serviceThread :: TBQueue ServiceEvent -> WS.Connection -> IO ()
-serviceThread serviceQ conn = do
+serviceThread :: TVar MSState -> TBQueue ServiceEvent -> WS.Connection -> IO ()
+serviceThread stateV serviceQ conn = do
   timerState <- newTVarIO Nothing
+  appState' <- readTVarIO stateV
+  if (isPlaying appState'.state)
+    then atomically $ writeTBQueue serviceQ StartTimer
+    else pure ()
   Ki.scoped $ \scope -> do
     Ki.fork_ scope $ forever $ do
       event <- atomically $ readTBQueue serviceQ
       case event of
-        StartTimer atTime -> do
-          atomically $ writeTVar timerState $ Just atTime
+        StartTimer -> do
+          atomically $ do
+            appState <- readTVar stateV
+            writeTVar timerState $ getPlayDate appState.state
           void $ Ki.fork scope $ timerT timerState
         StopTimer -> atomically $ writeTVar timerState Nothing
     atomically $ Ki.awaitAll scope
@@ -260,6 +269,12 @@ serviceThread serviceQ conn = do
               threadDelay 500000
               go
             Nothing -> pure ()
+    getPlayDate :: MSGameState -> Maybe UTCTime
+    getPlayDate (Play date _) = Just date
+    getPlayDate _ = Nothing
+    isPlaying :: MSGameState -> Bool
+    isPlaying (Play _ _) = True
+    isPlaying _ = False
 
 handleEvent :: WSEvent -> TVar MSState -> TBQueue ServiceEvent -> IO [Html ()]
 handleEvent wEv appStateV serviceQ = do
@@ -270,7 +285,7 @@ handleEvent wEv appStateV serviceQ = do
       case appState'.state of
         Wait -> atomically $ do
           modifyTVar' appStateV $ \s -> s {state = Play atTime False}
-          writeTBQueue serviceQ (StartTimer atTime)
+          writeTBQueue serviceQ StartTimer
         _ -> pure ()
       appState <- readTVarIO appStateV
       case appState.state of
