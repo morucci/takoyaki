@@ -3,6 +3,7 @@
 
 module Demo.MineSweeper where
 
+import Codec.Serialise (Serialise)
 import Control.Concurrent (threadDelay)
 import Control.Concurrent.STM
 import Control.Monad (forever, void)
@@ -26,39 +27,56 @@ data MSState = MSState
     state :: MSGameState,
     settings :: MSSettings
   }
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise MSState
 
 data MSSettings = MSSettings
   { sizeCount :: Int, -- Board to be size^2
     mineCount :: Int
   }
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise MSSettings
 
 data MSGameState
   = Play UTCTime Bool
   | Win
   | Gameover
   | Wait
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise MSGameState
 
 data MSCellContent
   = Mine
   | Blank Int
-  deriving (Show)
+  deriving (Show, Generic)
 
-data MSCellStatus = Open | Hidden Bool deriving (Show)
+instance Serialise MSCellContent
+
+data MSCellStatus
+  = Open
+  | Hidden Bool
+  deriving (Show, Generic)
+
+instance Serialise MSCellStatus
 
 data MSCell = MSCell
   { cellContent :: MSCellContent,
     cellStatus :: MSCellStatus
   }
-  deriving (Show)
+  deriving (Show, Generic)
+
+instance Serialise MSCell
 
 data MSCellCoord = MSCellCoord
   { cx :: Int,
     cy :: Int
   }
   deriving (Show, Eq, Ord, Generic)
+
+instance Serialise MSCellCoord
 
 type MSBoard = Map.Map MSCellCoord MSCell
 

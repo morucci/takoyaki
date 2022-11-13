@@ -42,14 +42,15 @@ library
                     , servant-websockets
                     , servant-xstatic
                     , servant-auth-server
-                    , cookie
-                    , lucid
-                    , lucid-xstatic
-                    , string-interpolate
                     , aeson
                     , async
                     , bytestring
                     , containers
+                    , cookie
+                    , lucid
+                    , lucid-xstatic
+                    , directory
+                    , filepath
                     , ki
                     , lens
                     , lens-aeson
@@ -59,6 +60,8 @@ library
                     , random
                     , safe-exceptions
                     , stm
+                    , serialise
+                    , string-interpolate
                     , hashable
                     , http-api-data
                     , unordered-containers

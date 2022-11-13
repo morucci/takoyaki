@@ -3,11 +3,13 @@
 
 module Demo.Todo where
 
+import Codec.Serialise (Serialise)
 import Control.Concurrent.STM
 import Control.Monad.State
 import qualified Data.Map as Map
 import Data.Text (Text)
 import Data.Time (UTCTime, defaultTimeLocale, formatTime, getCurrentTime, parseTimeOrError)
+import GHC.Generics (Generic)
 import Lucid
 import System.Random
 import Takoyaki.Engine
@@ -17,7 +19,13 @@ import Prelude
 
 type TaskId = Text
 
-data TaskPrio = High | Medium | Low deriving (Show, Eq)
+data TaskPrio
+  = High
+  | Medium
+  | Low
+  deriving (Show, Eq, Generic)
+
+instance Serialise TaskPrio
 
 data Task = Task
   { taskId :: TaskId,
@@ -25,7 +33,9 @@ data Task = Task
     taskDate :: UTCTime,
     taskPrio :: TaskPrio
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance Serialise Task
 
 data TaskUpdate = TaskUpdate
   { taskUpdateData :: Text,
@@ -33,7 +43,9 @@ data TaskUpdate = TaskUpdate
   }
   deriving (Show, Eq)
 
-data TodoList = TodoList [Task] deriving (Show)
+data TodoList = TodoList [Task] deriving (Show, Generic)
+
+instance Serialise TodoList
 
 data TodoAPPEvent
   = AddTask Task
