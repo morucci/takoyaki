@@ -16,6 +16,7 @@ import Data.String.Interpolate (i)
 import Data.Text (Text)
 import Data.Text.Encoding (encodeUtf8)
 import Data.UUID (UUID, fromASCIIBytes)
+import qualified Database.SQLite.Simple as DB
 import qualified Ki
 import Lucid (Attribute, Html, ToHtml (toHtml), With (with), renderBS)
 import Lucid.Html5
@@ -38,9 +39,10 @@ import Prelude
 
 data App s se = App
   { appName :: Text,
-    appGenState :: IO s,
+    appMkSessionState :: IO s,
+    appInitDB :: DB.Connection -> IO (),
     appRender :: TVar s -> STM (Html ()),
-    appHandleEvent :: WSEvent -> TVar s -> TBQueue se -> IO [Html ()],
+    appHandleEvent :: WSEvent -> TVar s -> TBQueue se -> DB.Connection -> IO [Html ()],
     appService :: TVar s -> TBQueue se -> WS.Connection -> IO ()
   }
 
@@ -51,7 +53,7 @@ connectionHandler app storeV (Just sessionUUID) conn = liftIO $ do
     putStrLn [i|New connection #{sessionUUID}...|]
     sE <- storeV.loadSession sessionUUID
     state <- case sE of
-      Left _ -> newTVarIO =<< app.appGenState
+      Left _ -> newTVarIO =<< app.appMkSessionState
       Right prevState -> newTVarIO prevState
     serviceQ <- newTBQueueIO 1
     appDom <- atomically $ app.appRender state
@@ -61,41 +63,58 @@ connectionHandler app storeV (Just sessionUUID) conn = liftIO $ do
       void $ handleEvents state serviceQ
       atomically $ Ki.await serviceT
   where
-    handleEvents stateV serviceQ = forever $ do
-      msg <- WS.receiveDataMessage conn
-      case decodeWSEvent msg of
-        Nothing -> pure ()
-        Just wsEvent -> do
-          putStrLn $ "Received WS event: " <> show wsEvent
-          fragments <- app.appHandleEvent wsEvent stateV serviceQ
-          state <- readTVarIO stateV
-          void $ storeV.dumpSession sessionUUID state
-          mapM_ (WS.sendTextData conn . renderBS) fragments
+    handleEvents stateV serviceQ = withAppDBConnection app.appName $
+      \dbConn -> forever $ do
+        msg <- WS.receiveDataMessage conn
+        case decodeWSEvent msg of
+          Nothing -> pure ()
+          Just wsEvent -> do
+            putStrLn $ "Received WS event: " <> show wsEvent
+            withAppDBConnection app.appName (const $ pure ())
+            fragments <- app.appHandleEvent wsEvent stateV serviceQ dbConn
+            state <- readTVarIO stateV
+            void $ storeV.dumpSession sessionUUID state
+            mapM_ (WS.sendTextData conn . renderBS) fragments
 
 data SessionStore s = SessionStore
-  { getPath :: FilePath,
+  { getSessionStorePath :: FilePath,
     loadSession :: UUID -> IO (Either SomeException s),
     dumpSession :: UUID -> s -> IO (Either SomeException ())
   }
 
 mkSessionStore :: Serialise s => Text -> IO (SessionStore s)
 mkSessionStore appName = do
-  let path = "takoyaki" </> from appName </> "sessions" </> "states"
-  dataDir <- getXdgDirectory XdgData $ from path
+  dataDir <-
+    getXdgDirectory XdgData
+      . from
+      $ "takoyaki" </> from appName </> "sessions"
   createDirectoryIfMissing True dataDir
   pure $
     SessionStore
-      { getPath = dataDir,
+      { getSessionStorePath = dataDir,
         loadSession = loadSession dataDir,
         dumpSession = dumpSession dataDir
       }
   where
+    mkPath path uuid = path </> (show uuid)
     loadSession path uuid =
-      let p = path </> (show uuid)
-       in try $ readFileDeserialise p
+      try $ readFileDeserialise $ mkPath path uuid
     dumpSession path uuid state =
-      let p = path </> (show uuid)
-       in try $ writeFileSerialise p state
+      try $ writeFileSerialise (mkPath path uuid) state
+
+withAppDBConnection :: Text -> (DB.Connection -> IO a) -> IO a
+withAppDBConnection appName action = do
+  dbPath <- getAppDBPath
+  DB.withConnection dbPath action
+  where
+    getAppDBPath :: IO FilePath
+    getAppDBPath = do
+      dataDir <-
+        getXdgDirectory XdgData
+          . from
+          $ "takoyaki" </> from appName
+      createDirectoryIfMissing True dataDir
+      pure $ dataDir </> "db.sqlite"
 
 withEvent :: TriggerId -> [Attribute] -> Html () -> Html ()
 withEvent tId tAttrs elm = with elm ([id_ tId, wsSend ""] <> tAttrs)
@@ -153,6 +172,6 @@ appServer app store =
 
 runServer :: Serialise s => App s se -> IO ()
 runServer app = do
-  store <- mkSessionStore app.appName
-  putStrLn $ "Storing session in: " <> store.getPath
-  Warp.run 8092 $ serve (Proxy @API) $ appServer app store
+  sessionStore <- mkSessionStore app.appName
+  void $ withAppDBConnection app.appName app.appInitDB
+  Warp.run 8092 $ serve (Proxy @API) $ appServer app sessionStore

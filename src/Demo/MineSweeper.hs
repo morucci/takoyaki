@@ -10,6 +10,7 @@ import Control.Monad (forever, void)
 import qualified Data.Map as Map
 import Data.Text (Text, intercalate, pack)
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
+import qualified Database.SQLite.Simple as DB
 import GHC.Generics (Generic)
 import qualified Ki
 import Lucid
@@ -245,15 +246,38 @@ mineSweeperApp = do
   pure $
     App
       { appName = "MineSweeper",
-        appGenState,
+        appMkSessionState,
+        appInitDB,
         appRender = renderApp,
         appHandleEvent = handleEvent,
         appService = serviceThread
       }
   where
-    appGenState = do
+    appMkSessionState = do
       board <- initBoard $ levelToSettings defaultLevel
       pure $ MSState board Wait $ levelToSettings defaultLevel
+    appInitDB conn = do
+      DB.execute_
+        conn
+        "CREATE TABLE IF NOT EXISTS scores (id INTEGER PRIMARY KEY, str TEXT, duration REAL)"
+
+data Score = Score Int Text Float deriving (Show)
+
+instance DB.ToRow Score where
+  toRow (Score id__ str duration) = DB.toRow (id__, str, duration)
+
+instance DB.FromRow Score where
+  fromRow = Score <$> DB.field <*> DB.field <*> DB.field
+
+loadScores :: DB.Connection -> IO [Score]
+loadScores conn = DB.query_ conn "SELECT * from scores"
+
+addScore :: DB.Connection -> Text -> Float -> IO ()
+addScore conn name duration =
+  DB.execute
+    conn
+    "INSERT INTO scores (str, duration) VALUES (?,?)"
+    (name, duration)
 
 diffTimeToFloat :: UTCTime -> UTCTime -> Float
 diffTimeToFloat a b = realToFrac $ diffUTCTime a b
@@ -299,8 +323,8 @@ serviceThread stateV serviceQ conn = do
     isPlaying (Play _ _) = True
     isPlaying _ = False
 
-handleEvent :: WSEvent -> TVar MSState -> TBQueue ServiceEvent -> IO [Html ()]
-handleEvent wEv appStateV serviceQ = do
+handleEvent :: WSEvent -> TVar MSState -> TBQueue ServiceEvent -> DB.Connection -> IO [Html ()]
+handleEvent wEv appStateV serviceQ dbConn = do
   case wSEvent wEv of
     Just (ClickCell cellCoord) -> do
       atTime <- getCurrentTime
@@ -341,6 +365,7 @@ handleEvent wEv appStateV serviceQ = do
                         board <- renderBoard appStateV
                         panel <- renderPanel appStateV (Just playDuration)
                         pure (board, panel)
+                      addScore dbConn "Anonymous" playDuration
                       pure [board, panel]
                     False -> do
                       (board, smiley) <- atomically $ do

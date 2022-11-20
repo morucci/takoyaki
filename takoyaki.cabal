@@ -59,6 +59,7 @@ library
                     , mtl
                     , random
                     , safe-exceptions
+                    , sqlite-simple
                     , stm
                     , serialise
                     , string-interpolate

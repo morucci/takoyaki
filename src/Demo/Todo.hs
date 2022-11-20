@@ -9,6 +9,7 @@ import Control.Monad.State
 import qualified Data.Map as Map
 import Data.Text (Text)
 import Data.Time (UTCTime, defaultTimeLocale, formatTime, getCurrentTime, parseTimeOrError)
+import qualified Database.SQLite.Simple as DB
 import GHC.Generics (Generic)
 import Lucid
 import System.Random
@@ -72,13 +73,14 @@ todoApp :: App TodoList ()
 todoApp =
   App
     { appName = "Takoyaki Todo",
-      appGenState,
+      appMkSessionState,
+      appInitDB = const $ pure (),
       appRender = renderApp,
       appHandleEvent = todoHandleEvent,
       appService = const . const . const $ pure ()
     }
   where
-    appGenState = pure $ TodoList $ [Task "1" "This is a demo task" date Medium]
+    appMkSessionState = pure $ TodoList $ [Task "1" "This is a demo task" date Medium]
     date = parseTimeOrError False defaultTimeLocale "%F" "2022-10-19"
 
 todoWSEvent :: WSEvent -> IO (Maybe TodoAPPEvent)
@@ -110,8 +112,8 @@ todoWSEvent (WSEvent wseName _ wseData) = case wseName of
     getRandom :: IO Int
     getRandom = randomIO
 
-todoHandleEvent :: WSEvent -> TVar TodoList -> TBQueue () -> IO [Html ()]
-todoHandleEvent wEv appStateV _serviceQ = do
+todoHandleEvent :: WSEvent -> TVar TodoList -> TBQueue () -> DB.Connection -> IO [Html ()]
+todoHandleEvent wEv appStateV _serviceQ _dbConn = do
   appState <- readTVarIO appStateV
   evM <- todoWSEvent wEv
   case evM of
