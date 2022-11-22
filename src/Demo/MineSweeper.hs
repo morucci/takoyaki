@@ -11,6 +11,9 @@ import qualified Data.Map as Map
 import Data.Text (Text, intercalate, pack)
 import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
 import qualified Database.SQLite.Simple as DB
+import qualified Database.SQLite.Simple.FromField as DB
+import qualified Database.SQLite.Simple.Internal as DB
+import qualified Database.SQLite.Simple.Ok as DB
 import GHC.Generics (Generic)
 import qualified Ki
 import Lucid
@@ -33,12 +36,15 @@ data MSState = MSState
 instance Serialise MSState
 
 data MSSettings = MSSettings
-  { sizeCount :: Int, -- Board to be size^2
-    mineCount :: Int
-  }
+  {level :: MSLevel}
   deriving (Show, Generic)
 
 instance Serialise MSSettings
+
+data MSBoardSettings = MSBoardSettings
+  { sizeCount :: Int,
+    mineCount :: Int
+  }
 
 data MSGameState
   = Play UTCTime Bool
@@ -93,7 +99,9 @@ data MSLevel
   | Intermediate
   | Expert
   | Impossible
-  deriving (Bounded, Enum, Show)
+  deriving (Bounded, Enum, Show, Generic)
+
+instance Serialise MSLevel
 
 instance From Text MSLevel where
   from txt = case txt of
@@ -107,16 +115,16 @@ instance From Text MSLevel where
 defaultLevel :: MSLevel
 defaultLevel = Beginner
 
-levelToSettings :: MSLevel -> MSSettings
-levelToSettings level = case level of
-  Baby -> MSSettings 6 3
-  Beginner -> MSSettings 9 9
-  Intermediate -> MSSettings 15 30
-  Expert -> MSSettings 20 75
-  Impossible -> MSSettings 20 150
+levelToBoardSettings :: MSLevel -> MSBoardSettings
+levelToBoardSettings level = case level of
+  Baby -> MSBoardSettings 6 3
+  Beginner -> MSBoardSettings 9 9
+  Intermediate -> MSBoardSettings 15 30
+  Expert -> MSBoardSettings 20 75
+  Impossible -> MSBoardSettings 20 150
 
-initBoard :: MSSettings -> IO MSBoard
-initBoard settings@MSSettings {..} = do
+initBoard :: MSBoardSettings -> IO MSBoard
+initBoard settings@MSBoardSettings {..} = do
   let cellsCoords = [MSCellCoord x y | x <- [0 .. sizeCount], y <- [0 .. sizeCount]]
       blankBoard = Map.fromList $ map (\coord -> (coord, MSCell (Blank 0) (Hidden False))) cellsCoords
   minesCoords <- getMinesCoords cellsCoords []
@@ -159,8 +167,8 @@ initBoard settings@MSSettings {..} = do
             (MSCell (Blank 1) (Hidden False))
             b
 
-getAdjCellCoords :: MSSettings -> MSCellCoord -> [MSCellCoord]
-getAdjCellCoords MSSettings {..} MSCellCoord {..} =
+getAdjCellCoords :: MSBoardSettings -> MSCellCoord -> [MSCellCoord]
+getAdjCellCoords MSBoardSettings {..} MSCellCoord {..} =
   let isInBoard (MSCellCoord cx' cy') =
         cx' >= 0
           && cx' <= sizeCount
@@ -220,7 +228,7 @@ countHiddenBlank board = length (filter keepHiddenBlank (Map.elems board))
     keepHiddenBlank (MSCell (Blank _) (Hidden False)) = True
     keepHiddenBlank _ = False
 
-openAdjBlank0Cells :: MSSettings -> MSCellCoord -> MSBoard -> MSBoard
+openAdjBlank0Cells :: MSBoardSettings -> MSCellCoord -> MSBoard -> MSBoard
 openAdjBlank0Cells settings cellCoord board =
   if isBlank0Cell cellCoord board
     then openCells (getAdjCellCoords settings cellCoord) board
@@ -254,30 +262,36 @@ mineSweeperApp = do
       }
   where
     appMkSessionState = do
-      board <- initBoard $ levelToSettings defaultLevel
-      pure $ MSState board Wait $ levelToSettings defaultLevel
+      let level = defaultLevel
+      board <- initBoard $ levelToBoardSettings level
+      pure $ MSState board Wait $ MSSettings level
     appInitDB conn = do
       DB.execute_
         conn
-        "CREATE TABLE IF NOT EXISTS scores (id INTEGER PRIMARY KEY, str TEXT, duration REAL)"
+        "CREATE TABLE IF NOT EXISTS scores (id INTEGER PRIMARY KEY, name TEXT, duration REAL, level TEXT)"
 
-data Score = Score Int Text Float deriving (Show)
-
-instance DB.ToRow Score where
-  toRow (Score id__ str duration) = DB.toRow (id__, str, duration)
+data Score = Score Int Text Float MSLevel deriving (Show)
 
 instance DB.FromRow Score where
-  fromRow = Score <$> DB.field <*> DB.field <*> DB.field
+  fromRow = Score <$> DB.field <*> DB.field <*> DB.field <*> DB.field
 
-loadScores :: DB.Connection -> IO [Score]
-loadScores conn = DB.query_ conn "SELECT * from scores"
+instance DB.FromField MSLevel where
+  fromField (DB.Field (DB.SQLText txt) _) = DB.Ok . from $ txt
+  fromField f = DB.returnError DB.ConversionFailed f "need a valid text level"
 
-addScore :: DB.Connection -> Text -> Float -> IO ()
-addScore conn name duration =
+getTopScores :: DB.Connection -> Integer -> MSLevel -> IO [Score]
+getTopScores conn limit _level =
+  DB.query
+    conn
+    "SELECT * from scores ORDER BY duration ASC LIMIT ?"
+    (DB.Only (show limit))
+
+addScore :: DB.Connection -> Text -> Float -> MSLevel -> IO ()
+addScore conn name duration level =
   DB.execute
     conn
-    "INSERT INTO scores (str, duration) VALUES (?,?)"
-    (name, duration)
+    "INSERT INTO scores (name, duration, level) VALUES (?,?,?)"
+    (name, duration, show level)
 
 diffTimeToFloat :: UTCTime -> UTCTime -> Float
 diffTimeToFloat a b = realToFrac $ diffUTCTime a b
@@ -325,6 +339,9 @@ serviceThread stateV serviceQ conn = do
 
 handleEvent :: WSEvent -> TVar MSState -> TBQueue ServiceEvent -> DB.Connection -> IO [Html ()]
 handleEvent wEv appStateV serviceQ dbConn = do
+  topScores <- getTopScores dbConn 10 Baby
+  putStrLn $ show topScores
+
   case wSEvent wEv of
     Just (ClickCell cellCoord) -> do
       atTime <- getCurrentTime
@@ -356,7 +373,7 @@ handleEvent wEv appStateV serviceQ dbConn = do
                   pure [board, panel]
                 False -> do
                   let gs1 = openCell cellCoord appState.board
-                      gs2 = openAdjBlank0Cells appState.settings cellCoord gs1
+                      gs2 = openAdjBlank0Cells (levelToBoardSettings appState.settings.level) cellCoord gs1
                   case countHiddenBlank gs2 == 0 of
                     True -> do
                       (board, panel) <- atomically $ do
@@ -365,7 +382,7 @@ handleEvent wEv appStateV serviceQ dbConn = do
                         board <- renderBoard appStateV
                         panel <- renderPanel appStateV (Just playDuration)
                         pure (board, panel)
-                      addScore dbConn "Anonymous" playDuration
+                      addScore dbConn "Anonymous" playDuration appState.settings.level
                       pure [board, panel]
                     False -> do
                       (board, smiley) <- atomically $ do
@@ -389,8 +406,8 @@ handleEvent wEv appStateV serviceQ dbConn = do
         pure [panel, renderLevelsSelector]
       pure frags
     Just (LevelSelected level) -> do
-      let settings = levelToSettings level
-      newBoard <- initBoard settings
+      let settings = MSSettings level
+      newBoard <- initBoard $ levelToBoardSettings level
       app <- atomically $ do
         modifyTVar' appStateV $ \s -> s {board = newBoard, state = Wait, settings}
         renderApp appStateV
@@ -445,7 +462,8 @@ renderPanel appStateV durationM = do
   flag <- renderFlag appStateV
   appState <- readTVar appStateV
   pure $ div_ [id_ "MSPanel", class_ "bg-gray-200 m-1 flex justify-between"] $ do
-    div_ [class_ "w-12"] $ toHtml $ mineLabel appState.settings.mineCount
+    let mineCount' = mineCount $ levelToBoardSettings appState.settings.level
+    div_ [class_ "w-12"] $ toHtml $ mineLabel mineCount'
     div_ [class_ "flex flex-row gap-2"] $ do
       smiley
       flag
@@ -502,7 +520,8 @@ renderLevelsSelector = do
 renderBoard :: TVar MSState -> STM (Html ())
 renderBoard appStateV = do
   appState <- readTVar appStateV
-  let gridType = "grid-cols-[" <> (intercalate "_" $ Prelude.replicate (appState.settings.sizeCount + 1) "20px") <> "]"
+  let sizeCount' = sizeCount $ levelToBoardSettings appState.settings.level
+  let gridType = "grid-cols-[" <> (intercalate "_" $ Prelude.replicate (sizeCount' + 1) "20px") <> "]"
   pure $ div_ [id_ "MSBoard", class_ $ "grid gap-1 " <> gridType] $ do
     mapM_ (renderCell appState.state) $ Map.toList appState.board
   where
