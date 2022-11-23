@@ -36,7 +36,9 @@ data MSState = MSState
 instance Serialise MSState
 
 data MSSettings = MSSettings
-  {level :: MSLevel}
+  { level :: MSLevel,
+    playerName :: Text
+  }
   deriving (Show, Generic)
 
 instance Serialise MSSettings
@@ -264,7 +266,7 @@ mineSweeperApp = do
     appMkSessionState = do
       let level = defaultLevel
       board <- initBoard $ levelToBoardSettings level
-      pure $ MSState board Wait $ MSSettings level
+      pure $ MSState board Wait $ MSSettings level "Anonymous"
     appInitDB conn = do
       DB.execute_
         conn
@@ -382,7 +384,7 @@ handleEvent wEv appStateV serviceQ dbConn = do
                         board <- renderBoard appStateV
                         panel <- renderPanel appStateV (Just playDuration)
                         pure (board, panel)
-                      addScore dbConn "Anonymous" playDuration appState.settings.level
+                      addScore dbConn appState.settings.playerName playDuration appState.settings.level
                       pure [board, panel]
                     False -> do
                       (board, smiley) <- atomically $ do
@@ -406,10 +408,14 @@ handleEvent wEv appStateV serviceQ dbConn = do
         pure [panel, renderLevelsSelector]
       pure frags
     Just (LevelSelected level) -> do
-      let settings = MSSettings level
       newBoard <- initBoard $ levelToBoardSettings level
       app <- atomically $ do
-        modifyTVar' appStateV $ \s -> s {board = newBoard, state = Wait, settings}
+        modifyTVar' appStateV $ \s ->
+          s
+            { board = newBoard,
+              state = Wait,
+              settings = MSSettings level s.settings.playerName
+            }
         renderApp appStateV
       pure [app]
     Just SetFlagMode -> do
