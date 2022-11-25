@@ -92,7 +92,7 @@ type MSBoard = Map.Map MSCellCoord MSCell
 data MSEvent
   = NewGame
   | ClickCell MSCellCoord
-  | LevelSelected MSLevel
+  | SettingsSelected MSLevel Text
   | SetFlagMode
 
 data MSLevel
@@ -101,7 +101,7 @@ data MSLevel
   | Intermediate
   | Expert
   | Impossible
-  deriving (Bounded, Enum, Show, Generic)
+  deriving (Bounded, Eq, Enum, Show, Generic)
 
 instance Serialise MSLevel
 
@@ -405,16 +405,17 @@ handleEvent wEv appStateV serviceQ dbConn = do
       frags <- atomically $ do
         writeTBQueue serviceQ StopTimer
         panel <- renderPanel appStateV (Just 0.0)
-        pure [panel, renderLevelsSelector]
+        levelsSelector <- renderSettings appStateV
+        pure [panel, levelsSelector]
       pure frags
-    Just (LevelSelected level) -> do
+    Just (SettingsSelected level playerName) -> do
       newBoard <- initBoard $ levelToBoardSettings level
       app <- atomically $ do
         modifyTVar' appStateV $ \s ->
           s
             { board = newBoard,
               state = Wait,
-              settings = MSSettings level s.settings.playerName
+              settings = MSSettings level playerName
             }
         renderApp appStateV
       pure [app]
@@ -447,9 +448,9 @@ handleEvent wEv appStateV serviceQ dbConn = do
                 _ -> Nothing
             _ -> Nothing
         "play" -> Just NewGame
-        "levelSelected" -> do
-          case getData "level" of
-            Just (Just level) -> Just $ LevelSelected (from level)
+        "setSettings" -> do
+          case (getData "level", getData "playerName") of
+            ((Just (Just level)), (Just (Just playerName))) -> Just $ SettingsSelected (from level) playerName
             _ -> Nothing
         "setFlagMode" -> Just SetFlagMode
         _ -> Nothing
@@ -506,22 +507,52 @@ renderTimer duration = do
   let durationT = printf "%.1f" duration :: String
   div_ [id_ "MSTimer", class_ "w-10 text-right"] $ toHtml durationT
 
-renderLevelsSelector :: Html ()
-renderLevelsSelector = do
-  div_ [id_ "MSBoard", class_ "bg-gray-100 w-64 flex flex-col items-center gap-px"] $ do
-    label_ "Select a level"
-    mapM_ (div_ . levelButton) [minBound .. maxBound]
+renderSettings :: TVar MSState -> STM (Html ())
+renderSettings appStateV = do
+  appState <- readTVar appStateV
+  let playerName = appState.settings.playerName
+      selectedLevel = appState.settings.level
+  pure $ div_ [id_ "MSBoard"] $ do
+    withEvent "setSettings" [] $ do
+      form_ [class_ "bg-gray-100 w-64 flex flex-col items-center gap-px"] $ do
+        label_ [class_ "m-1 font-semibold"] "Set your name"
+        nameInput playerName
+        label_ [class_ "m-1 font-semibold"] "Select a level"
+        mapM_ (div_ . levelButton selectedLevel) [minBound .. maxBound]
+        div_ [class_ "my-2"] $ submitButton
   where
-    levelButton :: MSLevel -> Html ()
-    levelButton level = do
-      let button = button_ [class_ "m-1 w-32 bg-gray-200 text-center cursor-pointer"] . toHtml $ show level
-      withEvent "levelSelected" [mkHxVals [("level", from $ show level)]] $ do
-        case level of
-          Baby -> div_ [class_ "text-blue-700"] button
-          Beginner -> div_ [class_ "text-blue-800"] button
-          Intermediate -> div_ [class_ "text-green-700"] button
-          Expert -> div_ [class_ "text-red-700"] button
-          Impossible -> div_ [class_ "text-black-700"] button
+    nameInput :: Text -> Html ()
+    nameInput playerName =
+      input_
+        [ type_ "text",
+          name_ "playerName",
+          value_ playerName,
+          placeholder_ "Anonymous",
+          class_ "h-8 w-32 border border-slate-300 rounded-md focus:border-slate-400"
+        ]
+    submitButton :: Html ()
+    submitButton =
+      button_
+        [ type_ "submit",
+          class_ "p-1 border-2 border-green-400 rounded"
+        ]
+        "Start a new board"
+    levelButton :: MSLevel -> MSLevel -> Html ()
+    levelButton selectedLevel level = do
+      input_ $
+        [name_ "level", id_ levelT, type_ "radio", value_ levelT]
+          <> if level == selectedLevel then [checked_] else mempty
+      label_ [for_ levelT] $ span_ [class_ levelS] $ toHtml levelT
+      where
+        levelT :: Text
+        levelT = from $ show level
+        levelS =
+          "ml-2" <> " " <> case level of
+            Baby -> "text-blue-700"
+            Beginner -> "text-blue-800"
+            Intermediate -> "text-green-700"
+            Expert -> "text-red-700"
+            Impossible -> "text-black-700"
 
 renderBoard :: TVar MSState -> STM (Html ())
 renderBoard appStateV = do
