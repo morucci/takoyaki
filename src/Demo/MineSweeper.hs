@@ -272,7 +272,13 @@ mineSweeperApp = do
         conn
         "CREATE TABLE IF NOT EXISTS scores (id INTEGER PRIMARY KEY, name TEXT, duration REAL, level TEXT)"
 
-data Score = Score Int Text Float MSLevel deriving (Show)
+data Score = Score
+  { scoreId :: Int,
+    scoreName :: Text,
+    scoreDuration :: Float,
+    scoreLevel :: MSLevel
+  }
+  deriving (Show)
 
 instance DB.FromRow Score where
   fromRow = Score <$> DB.field <*> DB.field <*> DB.field <*> DB.field
@@ -282,11 +288,11 @@ instance DB.FromField MSLevel where
   fromField f = DB.returnError DB.ConversionFailed f "need a valid text level"
 
 getTopScores :: DB.Connection -> Integer -> MSLevel -> IO [Score]
-getTopScores conn limit _level =
+getTopScores conn limit level =
   DB.query
     conn
-    "SELECT * from scores ORDER BY duration ASC LIMIT ?"
-    (DB.Only (show limit))
+    "SELECT * from scores WHERE level = ? ORDER BY duration ASC LIMIT ?"
+    (show level, show limit)
 
 addScore :: DB.Connection -> Text -> Float -> MSLevel -> IO ()
 addScore conn name duration level =
@@ -341,9 +347,6 @@ serviceThread stateV serviceQ conn = do
 
 handleEvent :: WSEvent -> TVar MSState -> TBQueue ServiceEvent -> DB.Connection -> IO [Html ()]
 handleEvent wEv appStateV serviceQ dbConn = do
-  topScores <- getTopScores dbConn 10 Baby
-  putStrLn $ show topScores
-
   case wSEvent wEv of
     Just (ClickCell cellCoord) -> do
       atTime <- getCurrentTime
@@ -410,14 +413,14 @@ handleEvent wEv appStateV serviceQ dbConn = do
       pure frags
     Just (SettingsSelected level playerName) -> do
       newBoard <- initBoard $ levelToBoardSettings level
-      app <- atomically $ do
+      atomically $ do
         modifyTVar' appStateV $ \s ->
           s
             { board = newBoard,
               state = Wait,
               settings = MSSettings level playerName
             }
-        renderApp appStateV
+      app <- renderApp appStateV dbConn
       pure [app]
     Just SetFlagMode -> do
       frags <- atomically $ do
@@ -455,13 +458,40 @@ handleEvent wEv appStateV serviceQ dbConn = do
         "setFlagMode" -> Just SetFlagMode
         _ -> Nothing
 
-renderApp :: TVar MSState -> STM (Html ())
-renderApp appStateV = do
-  panel <- renderPanel appStateV (Just 0.0)
-  board <- renderBoard appStateV
+renderApp :: TVar MSState -> DB.Connection -> IO (Html ())
+renderApp appStateV dbConn = do
+  (panel, board) <- atomically $ do
+    panel <- renderPanel appStateV (Just 0.0)
+    board <- renderBoard appStateV
+    pure (panel, board)
+  leaderBoard <- renderLeaderBoard appStateV dbConn
+  appState <- readTVarIO appStateV
   pure $ div_ [id_ "MSMain", class_ "min-w-fit max-w-fit border-2 border-gray-400 bg-gray-100"] $ do
-    panel
-    board
+    div_ [class_ "flex columns-3"] $ do
+      div_ [class_ "border-solid border-2 border-gray-300"] $ do
+        panel
+        board
+      div_ [class_ "w-64 border-solid border-2 border-gray-300"] $ do
+        renderLeaderBoardHeader appState.settings.level
+        leaderBoard
+
+renderLeaderBoardHeader :: MSLevel -> Html ()
+renderLeaderBoardHeader level =
+  div_ [class_ "bg-gray-200 text-center"] $ (toHtml $ show level) <> " " <> "Leaderboard"
+
+renderLeaderBoard :: TVar MSState -> DB.Connection -> IO (Html ())
+renderLeaderBoard appStateV dbConn = do
+  appState <- readTVarIO appStateV
+  scores <- getTopScores dbConn 10 appState.settings.level
+  pure $ div_ [id_ "MSLeaderBoard"] $ case length scores of
+    0 -> p_ "The leaderboard is empty. Be the first to appear here !"
+    _ -> ol_ [] $ mapM_ displayScoreLine scores
+  where
+    displayScoreLine :: Score -> Html ()
+    displayScoreLine Score {..} = do
+      li_ [] $ div_ [class_ "grid grid-cols-3 gap-1"] $ do
+        div_ [class_ "col-start-1"] $ toHtml scoreName
+        div_ [class_ "col-start-3 text-right"] $ toHtml (toDurationT scoreDuration)
 
 renderPanel :: TVar MSState -> Maybe Float -> STM (Html ())
 renderPanel appStateV durationM = do
@@ -502,10 +532,12 @@ renderSmiley appStateV = do
           Gameover -> "😖"
           Win -> "😎"
 
+toDurationT :: Float -> String
+toDurationT duration = printf "%.1f" duration
+
 renderTimer :: Float -> Html ()
 renderTimer duration = do
-  let durationT = printf "%.1f" duration :: String
-  div_ [id_ "MSTimer", class_ "w-10 text-right"] $ toHtml durationT
+  div_ [id_ "MSTimer", class_ "w-10 text-right"] $ toHtml $ toDurationT duration
 
 renderSettings :: TVar MSState -> STM (Html ())
 renderSettings appStateV = do

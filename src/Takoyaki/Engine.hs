@@ -41,7 +41,7 @@ data App s se = App
   { appName :: Text,
     appMkSessionState :: IO s,
     appInitDB :: DB.Connection -> IO (),
-    appRender :: TVar s -> STM (Html ()),
+    appRender :: TVar s -> DB.Connection -> IO (Html ()),
     appHandleEvent :: WSEvent -> TVar s -> TBQueue se -> DB.Connection -> IO [Html ()],
     appService :: TVar s -> TBQueue se -> WS.Connection -> IO ()
   }
@@ -56,7 +56,7 @@ connectionHandler app storeV (Just sessionUUID) conn = liftIO $ do
       Left _ -> newTVarIO =<< app.appMkSessionState
       Right prevState -> newTVarIO prevState
     serviceQ <- newTBQueueIO 1
-    appDom <- atomically $ app.appRender state
+    appDom <- withAppDBConnection app.appName $ app.appRender state
     WS.sendTextData conn . renderBS . div_ [id_ "init"] $ appDom
     Ki.scoped $ \scope -> do
       serviceT <- Ki.fork scope (app.appService state serviceQ conn)

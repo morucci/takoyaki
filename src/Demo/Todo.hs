@@ -138,9 +138,9 @@ todoHandleEvent wEv appStateV _serviceQ _dbConn = do
       pure [todoListR, addTaskFormH]
     _ -> pure []
 
-renderApp :: TVar TodoList -> STM (Html ())
-renderApp appStateV = do
-  todoListR <- todoListH appStateV
+renderApp :: TVar TodoList -> DB.Connection -> IO (Html ())
+renderApp appStateV _dbConn = do
+  todoListR <- atomically $ todoListH appStateV
   pure $ div_ [class_ "bg-gray-200"] $ do
     h1_ "Takoyaki TODO list demo"
     addTaskFormH
