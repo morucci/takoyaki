@@ -1,7 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Demo.Todo where
+module Demo.Todo (run) where
 
 import Codec.Serialise (Serialise)
 import Control.Concurrent.STM
@@ -223,5 +223,5 @@ updateTask (TodoList tasks) taskId' TaskUpdate {..} = TodoList $ map update task
         then Task taskId taskUpdateData taskDate taskUpdatePrio
         else task
 
-run :: IO ()
-run = runServer todoApp
+run :: Int -> IO ()
+run port = runServer port todoApp

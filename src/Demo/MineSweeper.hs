@@ -631,7 +631,7 @@ renderBoard appStateV = do
                 Wait -> elm'
                 _ -> elm
 
-run :: IO ()
-run = do
+run :: Int -> IO ()
+run port = do
   app <- mineSweeperApp
-  runServer app
+  runServer port app

@@ -1,7 +1,2 @@
 cradle:
   cabal:
-    - path: "src"
-      component: "lib:takoyaki"
-
-    - path: "app/Main.hs"
-      component: "takoyaki:exe:takoyaki"

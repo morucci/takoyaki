@@ -170,8 +170,8 @@ appServer app store =
     :<|> bootHandler app.appName
     :<|> connectionHandler app store
 
-runServer :: Serialise s => App s se -> IO ()
-runServer app = do
+runServer :: Serialise s => Int -> App s se -> IO ()
+runServer port app = do
   sessionStore <- mkSessionStore app.appName
   void $ withAppDBConnection app.appName app.appInitDB
-  Warp.run 8092 $ serve (Proxy @API) $ appServer app sessionStore
+  Warp.run port $ serve (Proxy @API) $ appServer app sessionStore
