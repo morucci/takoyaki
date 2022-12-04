@@ -23,7 +23,8 @@ Also, the container can be built this way;
 nix build .#container
 podman load < ./result
 # Then
-podman run -it --rm --network host quay.io/fboucher/takoyaki:latest takoyaki MineSweeper
+mkdir ~/takoyaki-home
+podman run -it --rm --network host -v ~/takoyaki-home:/var/lib/takoyaki:Z quay.io/fboucher/takoyaki:latest takoyaki MineSweeper
 firefox http://127.0.0.1:8092
 ```
 

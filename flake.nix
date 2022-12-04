@@ -17,14 +17,18 @@
         myPackage = haskellPackages.callCabal2nix packageName self { };
         takoyakiExe = pkgs.haskell.lib.justStaticExecutables myPackage;
 
+        containerHome = "var/lib/${packageName}";
+        mkContainerHome = "mkdir -p -m 744 ${containerHome}";
+
         takoyakiContainer = pkgs.dockerTools.buildLayeredImage {
           name = "quay.io/fboucher/takoyaki";
           contents = [ pkgs.coreutils pkgs.bash takoyakiExe ];
+          extraCommands = "${mkContainerHome}";
           tag = "latest";
           created = "now";
           config = {
             Env = [
-              "HOME=/"
+              "HOME=/${containerHome}"
               # Use fakeroot to avoid `No user exists for uid` error
               "LD_PRELOAD=${pkgs.fakeroot}/lib/libfakeroot.so"
             ];
