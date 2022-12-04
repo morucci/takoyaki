@@ -21,7 +21,7 @@
         mkContainerHome = "mkdir -p -m 744 ${containerHome}";
 
         takoyakiContainer = pkgs.dockerTools.buildLayeredImage {
-          name = "quay.io/fboucher/takoyaki";
+          name = "docker.io/morucci/takoyaki";
           contents = [ pkgs.coreutils pkgs.bash takoyakiExe ];
           extraCommands = "${mkContainerHome}";
           tag = "latest";

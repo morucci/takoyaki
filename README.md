@@ -24,7 +24,7 @@ nix build .#container
 podman load < ./result
 # Then
 mkdir ~/takoyaki-home
-podman run -it --rm --network host -v ~/takoyaki-home:/var/lib/takoyaki:Z quay.io/fboucher/takoyaki:latest takoyaki MineSweeper
+podman run -it --rm --network host -v ~/takoyaki-home:/var/lib/takoyaki:Z docker.io/morucci/takoyaki:latest takoyaki MineSweeper
 firefox http://127.0.0.1:8092
 ```
 
