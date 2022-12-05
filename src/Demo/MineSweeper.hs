@@ -9,7 +9,7 @@ import Control.Concurrent.STM
 import Control.Monad (forever, void)
 import qualified Data.Map as Map
 import Data.Text (Text, intercalate, pack)
-import Data.Time (UTCTime, diffUTCTime, getCurrentTime)
+import Data.Time (UTCTime, defaultTimeLocale, diffUTCTime, formatTime, getCurrentTime)
 import qualified Database.SQLite.Simple as DB
 import qualified Database.SQLite.Simple.FromField as DB
 import qualified Database.SQLite.Simple.Internal as DB
@@ -270,18 +270,19 @@ mineSweeperApp = do
     appInitDB conn = do
       DB.execute_
         conn
-        "CREATE TABLE IF NOT EXISTS scores (id INTEGER PRIMARY KEY, name TEXT, duration REAL, level TEXT)"
+        "CREATE TABLE IF NOT EXISTS scores (id INTEGER PRIMARY KEY, name TEXT, date DATE, duration REAL, level TEXT)"
 
 data Score = Score
   { scoreId :: Int,
     scoreName :: Text,
+    scoreDate :: UTCTime,
     scoreDuration :: Float,
     scoreLevel :: MSLevel
   }
   deriving (Show)
 
 instance DB.FromRow Score where
-  fromRow = Score <$> DB.field <*> DB.field <*> DB.field <*> DB.field
+  fromRow = Score <$> DB.field <*> DB.field <*> DB.field <*> DB.field <*> DB.field
 
 instance DB.FromField MSLevel where
   fromField (DB.Field (DB.SQLText txt) _) = DB.Ok . from $ txt
@@ -294,12 +295,12 @@ getTopScores conn limit level =
     "SELECT * from scores WHERE level = ? ORDER BY duration ASC LIMIT ?"
     (show level, show limit)
 
-addScore :: DB.Connection -> Text -> Float -> MSLevel -> IO ()
-addScore conn name duration level =
+addScore :: DB.Connection -> Text -> UTCTime -> Float -> MSLevel -> IO ()
+addScore conn name date duration level =
   DB.execute
     conn
-    "INSERT INTO scores (name, duration, level) VALUES (?,?,?)"
-    (name, duration, show level)
+    "INSERT INTO scores (name, date, duration, level) VALUES (?,?,?,?)"
+    (name, date, duration, show level)
 
 diffTimeToFloat :: UTCTime -> UTCTime -> Float
 diffTimeToFloat a b = realToFrac $ diffUTCTime a b
@@ -387,7 +388,7 @@ handleEvent wEv appStateV serviceQ dbConn = do
                         board <- renderBoard appStateV
                         panel <- renderPanel appStateV (Just playDuration)
                         pure (board, panel)
-                      addScore dbConn appState.settings.playerName playDuration appState.settings.level
+                      addScore dbConn appState.settings.playerName atTime playDuration appState.settings.level
                       pure [board, panel]
                     False -> do
                       (board, smiley) <- atomically $ do
@@ -490,7 +491,8 @@ renderLeaderBoard appStateV dbConn = do
     displayScoreLine :: Score -> Html ()
     displayScoreLine Score {..} = do
       li_ [] $ div_ [class_ "grid grid-cols-3 gap-1"] $ do
-        div_ [class_ "col-start-1"] $ toHtml scoreName
+        div_ [class_ "col-start-1"] $ toHtml $ formatTime defaultTimeLocale "%F" scoreDate
+        div_ [class_ "col-start-2"] $ toHtml scoreName
         div_ [class_ "col-start-3 text-right"] $ toHtml (toDurationT scoreDuration)
 
 renderPanel :: TVar MSState -> Maybe Float -> STM (Html ())
