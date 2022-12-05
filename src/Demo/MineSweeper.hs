@@ -562,7 +562,9 @@ renderSettings appStateV = do
           name_ "playerName",
           value_ playerName,
           placeholder_ "Anonymous",
-          class_ "h-8 w-32 border border-slate-300 rounded-md focus:border-slate-400"
+          size_ "15",
+          maxlength_ "15",
+          class_ "h-8 text-center border border-slate-300 rounded-md focus:border-slate-400"
         ]
     submitButton :: Html ()
     submitButton =
