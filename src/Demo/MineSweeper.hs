@@ -389,7 +389,8 @@ handleEvent wEv appStateV serviceQ dbConn = do
                         panel <- renderPanel appStateV (Just playDuration)
                         pure (board, panel)
                       addScore dbConn appState.settings.playerName atTime playDuration appState.settings.level
-                      pure [board, panel]
+                      leaderBoard <- renderLeaderBoard appStateV dbConn
+                      pure [board, panel, leaderBoard]
                     False -> do
                       (board, smiley) <- atomically $ do
                         modifyTVar' appStateV $ \s -> s {board = gs2}
@@ -397,21 +398,18 @@ handleEvent wEv appStateV serviceQ dbConn = do
                         smiley <- renderSmiley appStateV
                         pure (board, smiley)
                       pure [board, smiley]
-        Play st True -> do
-          atomically $ do
-            let board = setFlagOnCell cellCoord appState.board
-            modifyTVar' appStateV $ \s -> s {state = Play st False, board}
-            flag <- renderFlag appStateV
-            board' <- renderBoard appStateV
-            pure [flag, board']
+        Play st True -> atomically $ do
+          let board = setFlagOnCell cellCoord appState.board
+          modifyTVar' appStateV $ \s -> s {state = Play st False, board}
+          flag <- renderFlag appStateV
+          board' <- renderBoard appStateV
+          pure [flag, board']
         _ -> pure []
-    Just NewGame -> do
-      frags <- atomically $ do
-        writeTBQueue serviceQ StopTimer
-        panel <- renderPanel appStateV (Just 0.0)
-        levelsSelector <- renderSettings appStateV
-        pure [panel, levelsSelector]
-      pure frags
+    Just NewGame -> atomically $ do
+      writeTBQueue serviceQ StopTimer
+      panel <- renderPanel appStateV (Just 0.0)
+      levelsSelector <- renderSettings appStateV
+      pure [panel, levelsSelector]
     Just (SettingsSelected level playerName) -> do
       newBoard <- initBoard $ levelToBoardSettings level
       atomically $ do
