@@ -463,13 +463,18 @@ renderApp appStateV dbConn = do
   leaderBoard <- renderLeaderBoard appStateV dbConn
   appState <- readTVarIO appStateV
   pure $ div_ [id_ "MSMain", class_ "min-w-fit max-w-fit border-2 border-gray-400 bg-gray-100"] $ do
-    div_ [class_ "flex columns-3"] $ do
-      div_ [class_ "border-solid border-2 border-gray-300"] $ do
-        panel
-        board
-      div_ [class_ "w-64 border-solid border-2 border-gray-300"] $ do
-        renderLeaderBoardHeader appState.settings.level
-        leaderBoard
+    div_ [class_ "flex flex-col"] $ do
+      div_ [class_ "flex flex-row"] $ do
+        div_ [class_ "border-solid border-2 border-gray-300"] $ do
+          panel
+          board
+        div_ [class_ "w-64 border-solid border-2 border-gray-300"] $ do
+          renderLeaderBoardHeader appState.settings.level
+          leaderBoard
+      div_ [class_ "bg-gray-200"] $ do
+        div_ [class_ "flex flex-row gap-2 flex-row-reverse pr-2"] $ do
+          div_ [] "- 1.0.0"
+          a_ [class_ "text-blue-600", href_ "https://github.com/morucci/takoyaki"] "Takoyaki/MineSweeper"
 
 renderLeaderBoardHeader :: MSLevel -> Html ()
 renderLeaderBoardHeader level =
