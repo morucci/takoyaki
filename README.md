@@ -1,7 +1,6 @@
 # Takoyaki
 
-Takoyaki is an experiment of a simple reactive Web framework
-built over HTMX.
+Takoyaki is an experiment of a simple reactive Web framework built over HTMX.
 
 It provides some Demo applications:
 
