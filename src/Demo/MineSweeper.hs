@@ -468,7 +468,7 @@ renderApp appStateV dbConn = do
         div_ [class_ "border-solid border-2 border-gray-300"] $ do
           panel
           board
-        div_ [class_ "w-64 border-solid border-2 border-gray-300"] $ do
+        div_ [class_ "w-72 border-solid border-2 border-gray-300"] $ do
           renderLeaderBoardHeader appState.settings.level
           leaderBoard
       div_ [class_ "bg-gray-200"] $ do
