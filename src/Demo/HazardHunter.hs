@@ -37,7 +37,8 @@ instance Serialise MSState
 
 data MSSettings = MSSettings
   { level :: MSLevel,
-    playerName :: Text
+    playerName :: Text,
+    hazard :: Hazard
   }
   deriving (Show, Generic)
 
@@ -111,6 +112,40 @@ instance From Text MSLevel where
     "Intermediate" -> Intermediate
     "Expert" -> Expert
     _ -> error "Unhandled level"
+
+data Hazard
+  = HMine
+  | HSnake
+  | HSpidder
+  | HPumpkin
+  | HPoo
+  | HVampire
+  | HTengu
+  | HAlien
+  | HGost
+  deriving (Bounded, Enum, Show, Generic)
+
+instance Serialise Hazard
+
+hazards :: [Hazard]
+hazards = [minBound .. maxBound]
+
+randomHazard :: IO Hazard
+randomHazard = do
+  selected <- randomRIO (0, length hazards - 1)
+  pure $ hazards !! selected
+
+hazardToText :: Hazard -> Text
+hazardToText hazard = case hazard of
+  HMine -> "💣"
+  HSnake -> "🐍" 
+  HSpidder -> "🕷"
+  HPumpkin -> "🎃"
+  HPoo -> "💩"
+  HVampire -> "🧛"
+  HTengu -> "👺"
+  HAlien -> "👽"
+  HGost -> "👻"
 
 defaultLevel :: MSLevel
 defaultLevel = Beginner
@@ -248,8 +283,8 @@ data ServiceEvent
   | StopTimer
   deriving (Show)
 
-mineSweeperApp :: IO (App MSState ServiceEvent)
-mineSweeperApp = do
+hazardHunterApp :: IO (App MSState ServiceEvent)
+hazardHunterApp = do
   pure $
     App
       { appName = "HazardHunter",
@@ -263,7 +298,8 @@ mineSweeperApp = do
     appMkSessionState = do
       let level = defaultLevel
       board <- initBoard $ levelToBoardSettings level
-      pure $ MSState board Wait $ MSSettings level "Anonymous"
+      hazard <- randomHazard
+      pure $ MSState board Wait $ MSSettings level "Anonymous" hazard
     appInitDB conn = do
       DB.execute_
         conn
@@ -409,12 +445,13 @@ handleEvent wEv appStateV serviceQ dbConn = do
       pure [panel, levelsSelector]
     Just (SettingsSelected level playerName) -> do
       newBoard <- initBoard $ levelToBoardSettings level
+      hazard <- randomHazard
       atomically $ do
         modifyTVar' appStateV $ \s ->
           s
             { board = newBoard,
               state = Wait,
-              settings = MSSettings level playerName
+              settings = MSSettings level playerName hazard
             }
       app <- renderApp appStateV dbConn
       pure [app]
@@ -502,7 +539,7 @@ renderPanel appStateV durationM = do
   appState <- readTVar appStateV
   pure $ div_ [id_ "MSPanel", class_ "bg-gray-200 m-1 flex justify-between"] $ do
     let mineCount' = mineCount $ levelToBoardSettings appState.settings.level
-    div_ [class_ "w-12"] $ toHtml $ mineLabel mineCount'
+    div_ [class_ "w-12"] $ toHtml $ hazardLabel mineCount' appState.settings.hazard
     div_ [class_ "flex flex-row gap-2"] $ do
       smiley
       flag
@@ -510,8 +547,8 @@ renderPanel appStateV durationM = do
       Just duration -> renderTimer duration
       _ -> pure ()
   where
-    mineLabel :: Int -> Text
-    mineLabel count = (from $ show count) <> " 💣"
+    hazardLabel :: Int -> Hazard -> Text
+    hazardLabel count hazard = (from $ show count) <> " " <> hazardToText hazard
 
 renderFlag :: TVar MSState -> STM (Html ())
 renderFlag appStateV = do
@@ -595,10 +632,10 @@ renderBoard appStateV = do
   let sizeCount' = sizeCount $ levelToBoardSettings appState.settings.level
   let gridType = "grid-cols-[" <> (intercalate "_" $ Prelude.replicate (sizeCount' + 1) "20px") <> "]"
   pure $ div_ [id_ "MSBoard", class_ $ "grid gap-1 " <> gridType] $ do
-    mapM_ (renderCell appState.state) $ Map.toList appState.board
+    mapM_ (renderCell appState.state appState.settings.hazard) $ Map.toList appState.board
   where
-    renderCell :: MSGameState -> (MSCellCoord, MSCell) -> Html ()
-    renderCell gameState (cellCoords, cellState) =
+    renderCell :: MSGameState -> Hazard -> (MSCellCoord, MSCell) -> Html ()
+    renderCell gameState hazard (cellCoords, cellState) =
       let cellId = mkHxVals [("cx", pack $ show $ cellCoords.cx), ("cy", pack $ show $ cellCoords.cy)]
        in installCellEvent gameState cellId $
             div_ [class_ "bg-gray-300 text-center cursor-pointer"] $
@@ -621,7 +658,7 @@ renderBoard appStateV = do
                   _ -> if flag then flagCell else hiddenCell
                 MSCell _ _ -> hiddenCell
       where
-        mineCell = div_ [class_ "bg-red-500"] "💣"
+        mineCell = div_ [class_ "bg-red-500"] $ toHtml $ hazardToText hazard
         hiddenCell = div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] ""
         flagCell = div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] "🚩"
         showCellValue :: Int -> Html ()
@@ -636,5 +673,5 @@ renderBoard appStateV = do
 
 run :: Int -> IO ()
 run port = do
-  app <- mineSweeperApp
+  app <- hazardHunterApp
   runServer port app
