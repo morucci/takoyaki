@@ -1,11 +1,16 @@
 # Takoyaki
 
-Takoyaki is an experiment of a simple reactive Web framework built over HTMX.
+Takoyaki is an experiment of some HTMX/Haskell WEB SPA(s).
 
-It provides some Demo applications:
+Here is the list of available applications:
 
 - MineSweeper
-- Todolist
+
+<img src="assets/Minesweeper-1.0.0.png"
+     alt="Minesweeper-1.0.0"
+     style="margin-right: 10px;" />
+
+- Todolist (WIP)
 
 ## Start
 
