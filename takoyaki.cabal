@@ -35,7 +35,7 @@ library
     exposed-modules:  Takoyaki.Htmx
                     , Takoyaki.Engine
                     , Demo.Todo
-                    , Demo.MineSweeper
+                    , Demo.HazardHunter
     build-depends:    servant
                     , servant-lucid
                     , servant-server

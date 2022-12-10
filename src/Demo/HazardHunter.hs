@@ -1,7 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ViewPatterns #-}
 
-module Demo.MineSweeper where
+module Demo.HazardHunter where
 
 import Codec.Serialise (Serialise)
 import Control.Concurrent (threadDelay)
@@ -252,7 +252,7 @@ mineSweeperApp :: IO (App MSState ServiceEvent)
 mineSweeperApp = do
   pure $
     App
-      { appName = "MineSweeper",
+      { appName = "HazardHunter",
         appMkSessionState,
         appInitDB,
         appRender = renderApp,
@@ -474,7 +474,7 @@ renderApp appStateV dbConn = do
       div_ [class_ "bg-gray-200"] $ do
         div_ [class_ "flex flex-row gap-2 flex-row-reverse pr-2"] $ do
           div_ [] "- 1.0.0"
-          a_ [class_ "text-blue-600", href_ "https://github.com/morucci/takoyaki"] "Takoyaki/MineSweeper"
+          a_ [class_ "text-blue-600", href_ "https://github.com/morucci/takoyaki"] "HazardHunter"
 
 renderLeaderBoardHeader :: MSLevel -> Html ()
 renderLeaderBoardHeader level =
