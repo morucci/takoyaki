@@ -491,6 +491,12 @@ handleEvent wEv appStateV serviceQ dbConn = do
         "setFlagMode" -> Just SetFlagMode
         _ -> Nothing
 
+withThemeBgColor :: Text -> Text -> Text
+withThemeBgColor level cur = cur <> " " <> bgColorBase <> "-" <> level
+  where
+    colorBase = "blue"
+    bgColorBase = "bg-" <> colorBase
+
 renderApp :: TVar MSState -> DB.Connection -> IO (Html ())
 renderApp appStateV dbConn = do
   (panel, board) <- atomically $ do
@@ -501,27 +507,26 @@ renderApp appStateV dbConn = do
   appState <- readTVarIO appStateV
   pure $ div_ [id_ "MSMain", class_ "min-w-fit max-w-fit border-2 border-gray-400 bg-gray-100"] $ do
     div_ [class_ "flex flex-col"] $ do
-      div_ [class_ "flex flex-row"] $ do
-        div_ [class_ "border-solid border-2 border-gray-300"] $ do
-          panel
-          board
-        div_ [class_ "w-72 border-solid border-2 border-gray-300"] $ do
-          renderLeaderBoardHeader appState.settings.level
-          leaderBoard
-      div_ [class_ "bg-gray-200"] $ do
+      div_ [class_ "border-solid border-2 m-1 border-gray-300"] $ do
+        panel
+        board
+      div_ [class_ "border-solid border-2 m-1 border-gray-300"] $ do
+        renderLeaderBoardHeader appState.settings.level
+        leaderBoard
+      div_ [class_ $ withThemeBgColor "200" ""] $ do
         div_ [class_ "flex flex-row gap-2 flex-row-reverse pr-2"] $ do
           div_ [] "- 1.0.0"
           a_ [class_ "text-blue-600", href_ "https://github.com/morucci/takoyaki"] "HazardHunter"
 
 renderLeaderBoardHeader :: MSLevel -> Html ()
 renderLeaderBoardHeader level =
-  div_ [class_ "bg-gray-200 text-center"] $ (toHtml $ show level) <> " " <> "Leaderboard"
+  div_ [class_ $ withThemeBgColor "200" "text-center"] $ (toHtml $ show level) <> " " <> "Leaderboard"
 
 renderLeaderBoard :: TVar MSState -> DB.Connection -> IO (Html ())
 renderLeaderBoard appStateV dbConn = do
   appState <- readTVarIO appStateV
   scores <- getTopScores dbConn 10 appState.settings.level
-  pure $ div_ [id_ "MSLeaderBoard"] $ case length scores of
+  pure $ div_ [id_ "MSLeaderBoard", class_ $ withThemeBgColor "100" ""] $ case length scores of
     0 -> p_ "The leaderboard is empty. Be the first to appear here !"
     _ -> ol_ [] $ mapM_ displayScoreLine scores
   where
@@ -537,9 +542,9 @@ renderPanel appStateV durationM = do
   smiley <- renderSmiley appStateV
   flag <- renderFlag appStateV
   appState <- readTVar appStateV
-  pure $ div_ [id_ "MSPanel", class_ "bg-gray-200 m-1 flex justify-between"] $ do
+  pure $ div_ [id_ "MSPanel", class_ $ withThemeBgColor "200" "flex justify-between"] $ do
     let mineCount' = mineCount $ levelToBoardSettings appState.settings.level
-    div_ [class_ "w-12"] $ toHtml $ hazardLabel mineCount' appState.settings.hazard
+    div_ [class_ "pl-1 w-24"] $ toHtml $ hazardLabel mineCount' appState.settings.hazard
     div_ [class_ "flex flex-row gap-2"] $ do
       smiley
       flag
@@ -576,7 +581,7 @@ toDurationT duration = printf "%.1f" duration
 
 renderTimer :: Float -> Html ()
 renderTimer duration = do
-  div_ [id_ "MSTimer", class_ "w-10 text-right"] $ toHtml $ toDurationT duration
+  div_ [id_ "MSTimer", class_ "w-24 text-right pr-1"] $ toHtml $ toDurationT duration
 
 renderSettings :: TVar MSState -> STM (Html ())
 renderSettings appStateV = do
@@ -585,7 +590,7 @@ renderSettings appStateV = do
       selectedLevel = appState.settings.level
   pure $ div_ [id_ "MSBoard"] $ do
     withEvent "setSettings" [] $ do
-      form_ [class_ "bg-gray-100 w-64 flex flex-col items-center gap-px"] $ do
+      form_ [class_ $ withThemeBgColor "100" "flex flex-col items-center gap-px"] $ do
         label_ [class_ "m-1 font-semibold"] "Set your name"
         nameInput playerName
         label_ [class_ "m-1 font-semibold"] "Select a level"
@@ -631,25 +636,28 @@ renderBoard appStateV = do
   appState <- readTVar appStateV
   let sizeCount' = sizeCount $ levelToBoardSettings appState.settings.level
   let gridType = "grid-cols-[" <> (intercalate "_" $ Prelude.replicate (sizeCount' + 1) "20px") <> "]"
-  pure $ div_ [id_ "MSBoard", class_ $ "grid gap-1 " <> gridType] $ do
-    mapM_ (renderCell appState.state appState.settings.hazard) $ Map.toList appState.board
+  pure $ div_ [id_ "MSBoard"] $ do
+    div_ [class_ "flex place-content-center m-1"] $ do
+      div_ [class_ $ "grid gap-1 " <> gridType] $ do
+        mapM_ (renderCell appState.state appState.settings.hazard) $
+          Map.toList appState.board
   where
     renderCell :: MSGameState -> Hazard -> (MSCellCoord, MSCell) -> Html ()
     renderCell gameState hazard (cellCoords, cellState) =
       let cellId = mkHxVals [("cx", pack $ show $ cellCoords.cx), ("cy", pack $ show $ cellCoords.cy)]
        in installCellEvent gameState cellId $
-            div_ [class_ "bg-gray-300 text-center cursor-pointer"] $
+            div_ [class_ $ withThemeBgColor "100" "text-center cursor-pointer"] $
               case cellState of
                 MSCell (Blank v) Open
-                  | v == 0 -> div_ [class_ "bg-gray-200 h-6 w-full "] $ ""
-                  | v == 1 -> div_ [class_ "bg-gray-200 font-bold text-blue-700"] $ showCellValue v
-                  | v == 2 -> div_ [class_ "bg-gray-200 font-bold text-green-700"] $ showCellValue v
-                  | v == 3 -> div_ [class_ "bg-gray-200 font-bold text-red-700"] $ showCellValue v
-                  | v == 4 -> div_ [class_ "bg-gray-200 font-bold text-blue-900"] $ showCellValue v
-                  | v == 5 -> div_ [class_ "bg-gray-200 font-bold text-red-900"] $ showCellValue v
-                  | v == 6 -> div_ [class_ "bg-gray-200 font-bold text-green-900"] $ showCellValue v
-                  | v == 7 -> div_ [class_ "bg-gray-200 font-bold text-brown-700"] $ showCellValue v
-                  | v == 8 -> div_ [class_ "bg-gray-200 font-bold text-black-700"] $ showCellValue v
+                  | v == 0 -> div_ [class_ "h-6 w-full "] $ ""
+                  | v == 1 -> div_ [class_ "font-bold text-blue-700"] $ showCellValue v
+                  | v == 2 -> div_ [class_ "font-bold text-green-700"] $ showCellValue v
+                  | v == 3 -> div_ [class_ "font-bold text-red-700"] $ showCellValue v
+                  | v == 4 -> div_ [class_ "font-bold text-blue-900"] $ showCellValue v
+                  | v == 5 -> div_ [class_ "font-bold text-red-900"] $ showCellValue v
+                  | v == 6 -> div_ [class_ "font-bold text-green-900"] $ showCellValue v
+                  | v == 7 -> div_ [class_ "font-bold text-brown-700"] $ showCellValue v
+                  | v == 8 -> div_ [class_ "font-bold text-black-700"] $ showCellValue v
                 MSCell (Blank _) Open -> error "Impossible case"
                 MSCell Mine Open -> mineCell
                 MSCell (Blank _) (Hidden True) -> flagCell
@@ -659,8 +667,8 @@ renderBoard appStateV = do
                 MSCell _ _ -> hiddenCell
       where
         mineCell = div_ [class_ "bg-red-500"] $ toHtml $ hazardToText hazard
-        hiddenCell = div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] ""
-        flagCell = div_ [class_ "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] "🚩"
+        hiddenCell = div_ [class_ $ withThemeBgColor "300" "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] ""
+        flagCell = div_ [class_ $ withThemeBgColor "300" "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] "🚩"
         showCellValue :: Int -> Html ()
         showCellValue = toHtml . show
         installCellEvent :: MSGameState -> Attribute -> Html () -> Html ()

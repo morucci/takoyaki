@@ -132,7 +132,7 @@ bootHandler title cookieHeaderM = do
         xstaticScripts $ xStaticFiles <> [XStatic.tailwind]
       body_ $ do
         div_ [class_ "container mx-auto", hxExtWS, wsConnect $ wsPath sessionUUID] $
-          div_ [class_ "grid place-content-center m-2"] $ do
+          div_ [class_ "flex place-content-center"] $ do
             div_ [id_ "init"] ""
   where
     cookieName = "sessionUUID"
