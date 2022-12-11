@@ -532,10 +532,11 @@ renderLeaderBoard appStateV dbConn = do
   where
     displayScoreLine :: Score -> Html ()
     displayScoreLine Score {..} = do
-      li_ [] $ div_ [class_ "grid grid-cols-3 gap-1"] $ do
-        div_ [class_ "col-start-1"] $ toHtml $ formatTime defaultTimeLocale "%F" scoreDate
-        div_ [class_ "col-start-2"] $ toHtml scoreName
-        div_ [class_ "col-start-3 text-right"] $ toHtml (toDurationT scoreDuration)
+      li_ [] $ div_ [class_ "grid grid-cols-5 gap-1"] $ do
+        div_ [class_ "col-span-4"] $
+          toHtml $
+            formatTime defaultTimeLocale "%F" scoreDate <> " " <> from scoreName
+        div_ [class_ "col-span-1 text-right"] $ toHtml (toDurationT scoreDuration)
 
 renderPanel :: TVar MSState -> Maybe Float -> STM (Html ())
 renderPanel appStateV durationM = do
@@ -547,6 +548,7 @@ renderPanel appStateV durationM = do
     div_ [class_ "pl-1 w-24"] $ toHtml $ hazardLabel mineCount' appState.settings.hazard
     div_ [class_ "flex flex-row gap-2"] $ do
       smiley
+      div_ [class_ "p-2"] ""
       flag
     case durationM of
       Just duration -> renderTimer duration
@@ -667,8 +669,8 @@ renderBoard appStateV = do
                 MSCell _ _ -> hiddenCell
       where
         mineCell = div_ [class_ "bg-red-500"] $ toHtml $ hazardToText hazard
-        hiddenCell = div_ [class_ $ withThemeBgColor "300" "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] ""
-        flagCell = div_ [class_ $ withThemeBgColor "300" "border-2 border-r-gray-400 border-b-gray-400 h-6 w-full"] "🚩"
+        hiddenCell = div_ [class_ $ withThemeBgColor "300" "border-2 rounded border-r-gray-400 border-b-gray-400 h-6 w-full"] ""
+        flagCell = div_ [class_ $ withThemeBgColor "300" "border-2 rounded border-r-gray-400 border-b-gray-400 h-6 w-full"] "🚩"
         showCellValue :: Int -> Html ()
         showCellValue = toHtml . show
         installCellEvent :: MSGameState -> Attribute -> Html () -> Html ()
