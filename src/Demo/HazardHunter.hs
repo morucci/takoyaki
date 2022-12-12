@@ -262,6 +262,12 @@ countHiddenBlank board = length (filter keepHiddenBlank (Map.elems board))
     keepHiddenBlank (MSCell (Blank _) (Hidden False)) = True
     keepHiddenBlank _ = False
 
+countFlagCells :: MSBoard -> Int
+countFlagCells board = length (filter keepFlagCell (Map.elems board))
+  where
+    keepFlagCell (MSCell _ (Hidden True)) = True
+    keepFlagCell _ = False
+
 openAdjBlank0Cells :: MSBoardSettings -> MSCellCoord -> MSBoard -> MSBoard
 openAdjBlank0Cells settings cellCoord board =
   if isBlank0Cell cellCoord board
@@ -563,8 +569,11 @@ renderFlag appStateV = do
   let flagMode = case appState.state of
         Play _ True -> "bg-red-200"
         _ -> mempty
+      usedFlags = countFlagCells appState.board
   pure $ div_ [id_ "MSFlag"] $ do
-    withEvent "setFlagMode" [] $ div_ [class_ ("cursor-pointer " <> flagMode)] "🚩"
+    div_ [class_ "flex flex-row gap-1"] $ do
+      withEvent "setFlagMode" [] $ div_ [class_ ("cursor-pointer " <> flagMode)] "🚩"
+      div_ . toHtml $ "(" <> show usedFlags <> ")"
 
 renderSmiley :: TVar MSState -> STM (Html ())
 renderSmiley appStateV = do
