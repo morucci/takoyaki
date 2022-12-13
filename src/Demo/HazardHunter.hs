@@ -437,9 +437,9 @@ handleEvent wEv appStateV serviceQ dbConn = do
                         smiley <- renderSmiley appStateV
                         pure (board, smiley)
                       pure [board, smiley]
-        Play st True -> atomically $ do
+        Play _ True -> atomically $ do
           let board = setFlagOnCell cellCoord appState.board
-          modifyTVar' appStateV $ \s -> s {state = Play st False, board}
+          modifyTVar' appStateV $ \s -> s {board}
           flag <- renderFlag appStateV
           board' <- renderBoard appStateV
           pure [flag, board']
