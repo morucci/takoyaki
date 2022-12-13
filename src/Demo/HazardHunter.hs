@@ -511,12 +511,12 @@ renderApp appStateV dbConn = do
     pure (panel, board)
   leaderBoard <- renderLeaderBoard appStateV dbConn
   appState <- readTVarIO appStateV
-  pure $ div_ [id_ "MSMain", class_ "min-w-fit max-w-fit border-2 border-gray-400 bg-gray-100"] $ do
+  pure $ div_ [id_ "MSMain", class_ "min-w-fit max-w-fit border-2 rounded border-gray-400 bg-gray-100"] $ do
     div_ [class_ "flex flex-col"] $ do
-      div_ [class_ "border-solid border-2 m-1 border-gray-300"] $ do
+      div_ [class_ "border-solid rounded border-2 m-1 border-gray-300"] $ do
         panel
         board
-      div_ [class_ "border-solid border-2 m-1 border-gray-300"] $ do
+      div_ [class_ "border-solid rounded border-2 m-1 border-gray-300"] $ do
         renderLeaderBoardHeader appState.settings.level
         leaderBoard
       div_ [class_ $ withThemeBgColor "200" ""] $ do
