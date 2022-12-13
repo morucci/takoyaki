@@ -8,6 +8,7 @@ Here is the list of available applications:
 
 <img src="assets/HazardHunter.png"
      alt="HazardHunter-1.0.0"
+     width=300px;
      style="margin-right: 10px;" />
 
 - Todolist (WIP)
