@@ -122,6 +122,7 @@ data Hazard
   | HVampire
   | HTengu
   | HAlien
+  | HAlien2
   | HGost
   deriving (Bounded, Enum, Show, Generic)
 
@@ -145,6 +146,7 @@ hazardToText hazard = case hazard of
   HVampire -> "🧛"
   HTengu -> "👺"
   HAlien -> "👽"
+  HAlien2 -> "👾"
   HGost -> "👻"
 
 defaultLevel :: MSLevel
@@ -582,10 +584,10 @@ renderSmiley appStateV = do
     div_ [id_ "MSSmiley"] $
       withEvent "play" [] $
         div_ [class_ "cursor-pointer"] $ case appState.state of
-          Play _ _ -> "🙂"
-          Wait -> "😴"
+          Play _ _ -> "🤔"
+          Wait -> "💤"
           Gameover -> "😖"
-          Win -> "😎"
+          Win -> "🥳"
 
 toDurationT :: Float -> String
 toDurationT duration = printf "%.1f" duration

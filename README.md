@@ -15,14 +15,17 @@ Here is the list of available applications:
 
 ## Start via nix flake
 
-To run the HazardHunter app from the nix flake:
+To run an app (for instance the HazardHunter app) from the nix flake:
 
 ```
-nix run github:takoyaki - HazardHunter
-# Or from the local checkout
-nix run .# -- HazardHunter
+nix run github:morucci/takoyaki -- HazardHunter
+firefox http://127.0.0.1:8092
+```
 
-# Then
+Or from the local checkout
+
+```
+nix run .# -- HazardHunter
 firefox http://127.0.0.1:8092
 ```
 
