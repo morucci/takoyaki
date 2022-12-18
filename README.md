@@ -4,7 +4,7 @@ Takoyaki is some experiment of on HTMX/Haskell WEB SPA(s).
 
 Here is the list of available applications:
 
-- HazardHunter
+- HazardHunter -> Play it on [https://hazard-hunter.web-apps.top](https://hazard-hunter.web-apps.top)
 
 <img src="assets/HazardHunter.png"
      alt="HazardHunter-1.0.0"
