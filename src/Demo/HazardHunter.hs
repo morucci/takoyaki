@@ -270,6 +270,12 @@ countFlagCells board = length (filter keepFlagCell (Map.elems board))
     keepFlagCell (MSCell _ (Hidden True)) = True
     keepFlagCell _ = False
 
+countOpenCells :: MSBoard -> Int
+countOpenCells board = length (filter keepOpenCell (Map.elems board))
+  where
+    keepOpenCell (MSCell _ Open) = True
+    keepOpenCell _ = False
+
 openAdjBlank0Cells :: MSBoardSettings -> MSCellCoord -> MSBoard -> MSBoard
 openAdjBlank0Cells settings cellCoord board =
   if isBlank0Cell cellCoord board
@@ -393,6 +399,13 @@ handleEvent wEv appStateV serviceQ dbConn = do
     Just (ClickCell cellCoord) -> do
       atTime <- getCurrentTime
       appState' <- readTVarIO appStateV
+      case countOpenCells appState'.board of
+        0 -> do
+          -- Ensure the first click on the board is not a hazard
+          newBoard <- ensureNFBoard appState'.board cellCoord appState'.settings.level
+          atomically $ modifyTVar' appStateV $ \s -> s {board = newBoard}
+          pure ()
+        _ -> pure ()
       case appState'.state of
         Wait -> atomically $ do
           modifyTVar' appStateV $ \s -> s {state = Play atTime False}
@@ -498,6 +511,12 @@ handleEvent wEv appStateV serviceQ dbConn = do
             _ -> Nothing
         "setFlagMode" -> Just SetFlagMode
         _ -> Nothing
+    ensureNFBoard :: MSBoard -> MSCellCoord -> MSLevel -> IO MSBoard
+    ensureNFBoard board cellCoord level = case isMineCell cellCoord board of
+      True -> do
+        newBoard <- initBoard $ levelToBoardSettings level
+        ensureNFBoard newBoard cellCoord level
+      False -> pure board
 
 withThemeBgColor :: Text -> Text -> Text
 withThemeBgColor level cur = cur <> " " <> bgColorBase <> "-" <> level
