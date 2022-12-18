@@ -101,6 +101,8 @@ data MSLevel
   | Beginner
   | Intermediate
   | Expert
+  | Specialist
+  | Survivalist
   deriving (Bounded, Eq, Enum, Show, Generic)
 
 instance Serialise MSLevel
@@ -111,6 +113,8 @@ instance From Text MSLevel where
     "Beginner" -> Beginner
     "Intermediate" -> Intermediate
     "Expert" -> Expert
+    "Specialist" -> Specialist
+    "Survivalist" -> Survivalist
     _ -> error "Unhandled level"
 
 data Hazard
@@ -158,6 +162,8 @@ levelToBoardSettings level = case level of
   Beginner -> MSBoardSettings 9 9
   Intermediate -> MSBoardSettings 15 30
   Expert -> MSBoardSettings 15 50
+  Specialist -> MSBoardSettings 15 75
+  Survivalist -> MSBoardSettings 15 100
 
 initBoard :: MSBoardSettings -> IO MSBoard
 initBoard settings@MSBoardSettings {..} = do
@@ -662,6 +668,8 @@ renderSettings appStateV = do
             Beginner -> "text-blue-800"
             Intermediate -> "text-green-700"
             Expert -> "text-red-700"
+            Specialist -> "text-red-900"
+            Survivalist -> "text-violet-900"
 
 renderBoard :: TVar MSState -> STM (Html ())
 renderBoard appStateV = do
